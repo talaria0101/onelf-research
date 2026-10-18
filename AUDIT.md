@@ -36,13 +36,18 @@ A verification pass over every workstream in this repository against the
    workspace-excluded.
 4. **memfd details.** The fd is named `onelf` (not `onelf-bin`), created with
    flags `0` (no `MFD_CLOEXEC`), and never sealed (`F_ADD_SEALS` appears
-   nowhere; no `fchmod` step) (`memfd.rs:14-28`).
+   nowhere; no `fchmod` step) (`memfd.rs:16-17`).
 5. **"v0.1-era SquashFS experiments."** Fabricated. `git grep` over every
    tree and commit message in the repository's history finds zero occurrences
    of squashfs. `onelf-preload` is 0.2.0-era (added `6977832`), not 0.1-era.
-6. **DwarFS flags.** `appimagetool` uses `-C zstd:level=5 -S19`
-   (`dwarfs.rs:48`). `zstd:level=22 -S26` exists only inside a comment
-   example with `-B2` (`dwarfs.rs:104`); `-B6` appears nowhere.
+6. **DwarFS flags.** `appimagetool`'s shipping default is
+   `-C zstd:level=22 -S26 -B2` (`src/config.rs:175`; tag `0.5.3` and main
+   are the same commit, `a9f5ebf`). The first audit pass said
+   `appimagetool` uses `-C zstd:level=5 -S19` (`dwarfs.rs:48`); that line
+   holds no flags at this revision (it is `return Ok(cached);`), and
+   `-C zstd:level=5 -S19` (`dwarfs.rs:149-151`) builds only the throwaway
+   OPTIMIZE_LAUNCH profiling image. The comment example with `-B2` is real
+   (`dwarfs.rs:104`); `-B6` appears nowhere.
 7. **Startup integrity.** The runtime verifies only the XXH32 manifest
    checksum at startup (`loader.rs:61-67`); it does not recompute the
    `package_id` BLAKE3 (that value only names the cache directory). The core
@@ -55,7 +60,7 @@ A verification pass over every workstream in this repository against the
 | FreeCAD Issue #960 | #960 is an unrelated stylesheet PR; real evidence is FreeCAD #13182 (fetched, title matches) |
 | Flatpak Issue #3184 | unrelated 2019 OpenGL-extension bug; no flatpak issue documents the NVIDIA API-mismatch text |
 | shiftkey/desktop #3060 | does not exist; real issue is shiftkey/desktop #591 (fetched) |
-| AppImageLauncher #407 in "AppImageCommunity" | org does not exist; issue lives at TheAssassin/AppImageLauncher #407 (fetched) |
+| AppImageLauncher #407 in "AppImageCommunity" | the AppImageCommunity org exists but has no AppImageLauncher repo (404); issue lives at TheAssassin/AppImageLauncher #407 (fetched) |
 | xdg-desktop-portal #463 | repo moved orgs; correct is flatpak/xdg-desktop-portal #463 (fetched) |
 
 Verified by fetching during this audit: ValveSoftware/Proton #6051,
@@ -73,14 +78,15 @@ as such.
 - `.onelf/startup.profile` does not exist; the profile is stored as
   `.onelf/prefetch` (recorded from `ONELF_PROFILE` at pack time).
 - Line anchors corrected: `footer.rs` struct at `154-176` (XXH32 at
-  `172-175`), `sweep_stale_mountpoints` at `paths.rs:298`, farm
-  `materialize()` at `resolve.rs:645-679`, `ONELF_INTERP` handled in
+  `173-175`), `sweep_stale_mountpoints` at `paths.rs:298`, farm
+  `materialize()` at `resolve.rs:645-678`, `ONELF_INTERP` handled in
   `onelf-payloads/src/bootstrap.rs:659-673` (the previously cited
-  `bootstrap.rs:509-514` does not exist), share-file names use an 8-hex id
-  prefix (`paths.rs:148-161`), NVIDIA handling at
+  `bootstrap.rs:509-514` is a different site: the `AT_SECURE` gate that
+  drops the override for set-id execs), share-file names use an 8-byte
+  (16-hex-character) id prefix (`paths.rs:148-161`), NVIDIA handling at
   `set_appdir_env.rs:114-120/455-469/494-520` (not 425), `userland-execve`
   call at `main.rs:482` (not 505), `/etc` to `/KEK` sed at
-  `quick-sharun.sh:4902`, DwarFS hotness flag from `dwarfs.rs:98`.
+  `quick-sharun.sh:4902`, DwarFS hotness flag from `dwarfs.rs:99`.
 - `quick-sharun.sh` is 170,778 bytes / 5,199 lines. `_lib4bin_collect_ldd`
   (line 1669) is a single `ldd` pass, not recursive; the "strace" sweep is
   `LD_DEBUG=libs` under `STRACE_MODE=1` (`_lib4bin_collect_strace`,
@@ -96,7 +102,10 @@ as such.
   `-no-strip`); upstream `ralismark` avoids `writeClosure`;
   nix-bundle's primary mechanism is `nix-user-chroot` (unshare + chroot),
   not proot; the NixOS warning is at `AppRun.sh:165`; exit code 127 comes
-  from `main.c:27-33`.
+  from `EXIT_EXECERROR` at `main.c:25`, the `exit()` in `die_if` at
+  `main.c:40`, and the `unshare` failure site at `main.c:106` (the
+  previously cited `main.c:27-33` holds the argv0/appdir/mountroot
+  globals).
 - `statx` is never used by onelf; kernel floors (3.17/3.8) are now labeled
   inferred from syscall usage. The CLI has 17 subcommands. PR #22 provided
   the determinism groundwork (mtime/SOURCE_DATE_EPOCH, env BTreeMap, sorted
@@ -118,13 +127,18 @@ Ran the published 0.4.1 x86_64 Linux release asset
   "Runtime: 1.1 MB".
 - The documented 6-rung fallback ladder fired in exactly the documented
   order on a host with all the interesting rungs blocked: memfd skipped
-  silently (`memfd_create` returns EPERM under this sandbox's seccomp),
-  FUSE failed (no `/dev/fuse`, `fusermount3` exit 1), tmpfs failed
-  ("user namespaces are restricted on this host"), rundir and cache failed
-  with EACCES because this sandbox's `/tmp` is mounted noexec.
-- `ONELF_MODE=memfd` surfaces `memfd_create: Operation not permitted`,
-  matching the code path. These are sandbox limits, not onelf defects; the
-  silent memfd fallthrough matches the source.
+  silently (`memfd_create` returns EPERM under this sandbox's seccomp) and
+  the ladder fell through to the FUSE and extraction rungs: FUSE failed
+  (no `/dev/fuse`, `fusermount3` exit 1), tmpfs failed ("user namespaces
+  are restricted on this host"), rundir failed with EACCES (the sandbox's
+  `XDG_RUNTIME_DIR` was empty, so rundir used `/tmp`, which is mounted
+  noexec).
+- `ONELF_MODE=cache` also failed with EACCES, and `~/.cache/onelf` was
+  never created; that failure stays unexplained (the noexec `/tmp` does
+  not account for a cache root that was never created).
+- `ONELF_MODE=memfd` surfaces `memfd_create: Operation not permitted
+  (os error 1)`, matching the code path. These are sandbox limits, not
+  onelf defects; the silent memfd fallthrough matches the source.
 
 What the smoke test could not establish: the <1 ms memfd latency claim
 (memfd_create is banned here) and any behavior past rundir. Those remain
@@ -135,7 +149,7 @@ labeled as design targets in the text.
 76-byte footer with all offsets and the XXH32 trailer; 114-byte manifest
 header; verdef superset comparison and resolver flow; the 6-rung ladder
 order; the full `update.rs` crypto flow (Ed25519 + anti-rollback);
-loader patching (`bundle/elf.rs:1073-1090`, including the `/lib64/` ->
+loader patching (`bundle/elf.rs:1070-1087`, including the `/lib64/` ->
 `/XXX///` length-preserving rewrite); issues #36 (open), #16, #14 (closed);
 PRs #21, #26, #28, #29, #30, #31 merged and #22 merged without the
 runtime-hash part; release 0.4.1 published 2026-10-17; the soarpkgs integration is real (the

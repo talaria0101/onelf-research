@@ -23,16 +23,16 @@
 ## 2. Detailed Technical Breakdown of Top Failures
 
 ### 2.1 The FUSE2 Dependency Crisis
-- **The Shift:** In Ubuntu 22.04 LTS and Debian 12 (Bookworm), Canonical and Debian demoted `libfuse2` to universe/optional and stopped installing it on default desktop ISOs, transitioning to `fuse3` [Launchpad Bug #1965636, verified].
+- **The Shift:** In Ubuntu 22.04 LTS, Canonical demoted `libfuse2` from main/standard to universe/optional and dropped it from the default desktop ISO, which ships `fuse3` instead [Launchpad Bug #1965636, verified]. Debian 12 (Bookworm) likewise made `fuse3` the default FUSE (`ntfs-3g` switched its dependency from `fuse` to `fuse3`), while `libfuse2` stays priority optional, as it already was in bullseye.
 - **System Breakage:** Thousands of standard AppImages compiled with Type 2 runtimes fail immediately on stock Ubuntu 22.04+ with:
   `dlopen(): error loading libfuse.so.2` [verified].
-  Users attempting `sudo apt install fuse` triggered APT to uninstall `fuse3`, which silently purged `xdg-desktop-portal` and `xdg-desktop-portal-gtk`, corrupting the user desktop [AppImageKit Issue #1120, verified; the thread shows those three packages removed - `gnome-shell` is not evidenced there, an earlier edition overstated it].
+  Users attempting `sudo apt install fuse` triggered APT to uninstall `fuse3`, which removes `xdg-desktop-portal` and `xdg-desktop-portal-gtk` in the same APT transaction, breaking the desktop [AppImageKit Issue #1120, verified; the thread shows those three packages removed - `gnome-shell` is not evidenced there, an earlier edition overstated it].
 - **Workarounds & New Failures:**
   - Running `--appimage-extract-and-run` decompresses the full image to `/tmp`, consuming gigabytes of RAM/disk on tmpfs.
-  - Type 3 runtimes using `unshare(CLONE_NEWUSER)` now fail on **Ubuntu 24.04 LTS** due to `kernel.apparmor_restrict_unprivileged_userns = 1` [verified].
+  - Software mounting AppImages via `unshare(CLONE_NEWUSER)`, a long-open AppImageKit proposal (#389, port under way in type2-runtime PR #137) and shipped in `uruntime`, fails on **Ubuntu 24.04 LTS**, which defaults `kernel.apparmor_restrict_unprivileged_userns = 1` [verified for the sysctl default; reported for the runtime breakage].
 
 ### 2.2 Glibc Version Mismatches
-- **Forward Incompatibility:** Glibc enforces strict symbol versioning (`.gnu.version_r`). If an executable is built against glibc 2.38 (e.g. using `statx` or updated `pthread_create`), running it on an older host with glibc 2.35 produces a fatal dynamic linker abort before entering `main()` [verified].
+- **Forward Incompatibility:** Glibc enforces strict symbol versioning (`.gnu.version_r`). If an executable is built against glibc 2.38 (e.g. calling `strlcpy`, versioned `GLIBC_2.38`), running it on an older host with glibc 2.35 produces a fatal dynamic linker abort before entering `main()` [verified].
 - **Why Bundling Glibc Breaks AppImages:**
   Attempting to bundle `libc.so.6` in an AppImage via `LD_LIBRARY_PATH` corrupts the dynamic linker internal state (`_rtld_global`), causes dual-libc TLS clashes when `dlopen()`ing host graphics drivers, and causes segmentation faults in NSS resolver libraries [AppImageKit Issue #1078, verified for the `GLIBC_2.30 not found` abort and the stack-smashing crash; the `_rtld_global`/TLS mechanism is the standard explanation, inferred rather than stated in the issue].
 - **Reverse Incompatibility:**
@@ -46,7 +46,7 @@
 
 ### 2.4 Wayland & Desktop Integration
 - **Blurry Fractional Scaling:** Electron and Chromium AppImages default to X11/XWayland, rendering blurry raster upscales under Wayland compositors unless manually launched with `--ozone-platform=wayland` [shiftkey/desktop Issue #591, verified; an earlier edition cited #3060, which does not exist]
-- **Taskbar Icon Disconnect:** Wayland compositors map taskbar icons using `app_id` (matching the `.desktop` file name). Because standalone binaries lack registered `.desktop` files, taskbars display generic placeholder icons [AppImageKit Issue #1434, reported].
+- **Taskbar Icon Disconnect:** Wayland compositors map taskbar icons using `app_id` (matching the `.desktop` file name). Because standalone binaries lack registered `.desktop` files, titlebar and Alt-Tab icons fall back to generic placeholders on Wayland [AppImageKit Issue #1434, reported].
 - **Container Leaks:** `AppImageLauncher` registers global `binfmt_misc` rules that intercept ELF execution inside unprivileged Docker/LXC containers, breaking CI runners [AppImageLauncher Issue #407, reported].
 
 ### 2.5 Sandboxing Friction

@@ -10,7 +10,7 @@
 ## 1. Binary Format and Manifest Schema
 
 ### 1.1 Physical File Layout & Alignment
-An `onelf` executable is a contiguous, self-contained ELF executable container consisting of up to five concatenated sections (`docs/reference/file-format.md:8-28` `[verified]`):
+An `onelf` executable is a contiguous, self-contained ELF executable container consisting of up to five concatenated sections (`docs/reference/file-format.md:3-25` `[verified]`):
 
 ```text
 ┌────────────────────────────────────────────────────────┐  Offset 0
@@ -33,7 +33,7 @@ An `onelf` executable is a contiguous, self-contained ELF executable container c
 ```
 
 ### 1.2 Footer Specification (76 Bytes Fixed)
-Located at the exact end of the file (size constant and magics at `crates/onelf-format/src/footer.rs:53-55`, struct at `footer.rs:154-176`, field encoding in `write_to` at `footer.rs:213-225`; an earlier edition cited `footer.rs:14-28`, which is the doc-comment table) `[verified]`:
+Located at the exact end of the file (size constant and magics at `crates/onelf-format/src/footer.rs:53-55`, struct at `footer.rs:154-176`, field encoding in `write_to` at `footer.rs:209-223`; an earlier edition cited `footer.rs:14-28`, which is the doc-comment table) `[verified]`:
 
 | Offset | Size (Bytes) | Field Name | Type / Encoding | Description |
 |---|---|---|---|---|
@@ -47,7 +47,7 @@ Located at the exact end of the file (size constant and magics at `crates/onelf-
 | `44` | `8` | `payload_size` | `u64` (LE) | Total size of payload section in bytes |
 | `52` | `8` | `dict_offset` | `u64` (LE) | Offset of raw zstd dictionary (or `0` if absent) |
 | `60` | `4` | `dict_size` | `u32` (LE) | Size of zstd dictionary in bytes (or `0` if absent) |
-| `64` | `4` | `manifest_checksum` | `[u8; 4]` | Little-endian XXH32 of uncompressed manifest bytes |
+| `64` | `4` | `manifest_checksum` | `[u8; 4]` | Little-endian XXH32 of uncompressed manifest bytes (for version 3+, computed with the `footer_hash` header field zeroed) |
 | `68` | `8` | `end_magic` | `[u8; 8]` | Fixed trailer magic: `*b"FLENONE\0"` |
 
 #### Footer Flags (`crates/onelf-format/src/footer.rs:66-101` `[verified]`):
@@ -82,7 +82,7 @@ The manifest is decompressed with zstd into memory. The layout is (`crates/onelf
 - `working_dir` (`u8`): `0 = Inherit`, `1 = PackageRoot`, `2 = EntrypointParent`.
 - `flags` (`u8`): Bit 0 = `MEMFD_ELIGIBLE`.
 
-#### File/Directory/Symlink Entry Record (`crates/onelf-format/src/entry.rs:161-240` `[verified]`):
+#### File/Directory/Symlink Entry Record (`crates/onelf-format/src/entry.rs:161-246` `[verified]`):
 Serialized as a 65-byte header followed by `num_blocks * BLOCK_SIZE`:
 - `kind` (`u8`): `0 = Dir`, `1 = File`, `2 = Symlink`.
 - `parent` (`u32`): Parent directory entry index (`0xFFFFFFFF` for root entries). Directories must strictly precede their children (`manifest.rs:297-299`).
@@ -107,7 +107,7 @@ Serialized as a 65-byte header followed by `num_blocks * BLOCK_SIZE`:
 ### 2.1 Bundled vs. Host Selection Philosophy
 `onelf` avoids `LD_LIBRARY_PATH` pollution (`crates/onelf-rt/src/env.rs:7-13`, commit `1e5385e` `[verified]`). Host library directories are never placed on the general search path because unbundled dependencies would silently load random host libraries into the bundled libc environment.
 
-Instead, `onelf-format::resolve` uses **symbol version set comparison** (`verdef.rs`) and **materializes an ephemeral symlink farm** containing only approved host libraries (selection in `resolve()` at `resolve.rs:217-258`; farm written by `materialize()` at `resolve.rs:645-679`) `[verified]`.
+Instead, `onelf-format::resolve` uses **symbol version set comparison** (`verdef.rs`) and **materializes an ephemeral symlink farm** containing only approved host libraries (selection in `resolve()` at `resolve.rs:217-260`; farm written by `materialize()` at `resolve.rs:645-678`) `[verified]`.
 
 ### 2.2 Host Driver Discovery & Closure Walking
 1. **Host Indexing (`HostIndex::load`, `resolve.rs:387-423`) `[verified]`**:
@@ -144,7 +144,7 @@ pub fn compare(bundle: &VersionSet, host: &VersionSet) -> Choice {
 ### 2.4 Glibc Version Conflicts and Loader Coupling
 `libc.so.6` and the dynamic linker `ld-linux*.so` are strictly coupled:
 ```rust
-// crates/onelf-format/src/resolve.rs:310-335 [verified]
+// crates/onelf-format/src/resolve.rs:312-335 [verified]
 if let (true, Some(bundled_libc), Some(host_libc)) =
     (req.host_libc, bundled.get(LIBC), host.libs.get(LIBC))
 {
@@ -204,11 +204,11 @@ If the host glibc is newer than the bundled glibc and `req.host_libc` is enabled
 
 #### Mode 1: `memfd` (`crates/onelf-rt/src/memfd.rs` & `main.rs:166-226` `[verified]`)
 - **Trigger**: Single static ELF entrypoint (no `DT_NEEDED`), or `[package] memfd = true`, and verified content hash matching BLAKE3.
-- **Mechanism**: Calls `memfd_create("onelf", 0)` (`memfd.rs:16-17`; the fd name is `onelf`, there is no `MFD_CLOEXEC`, and no `F_ADD_SEALS`/`fchmod` sealing anywhere in the crate - an earlier edition's "seals it" was wrong). Decompresses the entrypoint payload into the memory fd (BLAKE3-verified against the entry's `content_hash` first, `main.rs:175-183`), then executes `/proc/self/fd/<fd>`. If memfd execution fails while not forced, the failure is silent and the ladder continues.
+- **Mechanism**: Calls `memfd_create("onelf", 0)` (`memfd.rs:16-17`; the fd name is `onelf`, there is no `MFD_CLOEXEC`, and no `F_ADD_SEALS`/`fchmod` sealing anywhere in the crate - an earlier edition's "seals it" was wrong). Decompresses the entrypoint payload into the memory fd (BLAKE3-verified against the entry's `content_hash` first, `main.rs:183-192`), then executes `/proc/self/fd/<fd>`. If memfd execution fails while not forced, the failure is silent and the ladder continues.
 - **Privilege/Security**: Zero filesystem footprint. No mount or extraction.
 - **Teardown**: Automatically reaped by kernel on process termination.
 
-#### Mode 2: FUSE via User Namespace (`crates/onelf-rt/src/fuse/mount.rs:120-146` `[verified]`)
+#### Mode 2: FUSE via User Namespace (`crates/onelf-rt/src/fuse/mount.rs:32-146` `[verified]`; `enter_namespace`/`unshare_and_map` at 32-65 do the unshare and id maps, `fuse_mount_unshare` at 120-146 the mount)
 - **Trigger**: Default for standard packages with dynamic libraries.
 - **Mechanism**: Calls `unshare(CLONE_NEWUSER | CLONE_NEWNS)`. Writes `deny` to `/proc/self/setgroups`, sets 1:1 mappings in `uid_map` and `gid_map`. Opens `/dev/fuse`, performs `mount("fuse", mountpoint, "fuse", MS_NOSUID | MS_NODEV | MS_NOATIME | MS_RDONLY, "fd=...,rootmode=40000,default_permissions")`. Forks child to exec target while parent serves in-tree FUSE loop.
 - **Privilege/Security**: Requires unprivileged user namespaces (`kernel.unprivileged_userns_clone == 1` and unrestricted AppArmor). Skipped if package has `.onelf/needs-setuid` or `ONELF_FUSE_NO_NAMESPACE=1`.
@@ -222,7 +222,7 @@ If the host glibc is newer than the bundled glibc and `req.host_libc` is enabled
 
 #### FUSE Instance Sharing (`crates/onelf-rt/src/fuse/share.rs` `[verified]`):
 Concurrent launches of the same package share a single FUSE mount and daemon:
-- Server records state in `.onelf-onelf-<name>-<id8>.share` and clients acquire `.onelf-onelf-<name>-<id8>.lease`, where `<id8>` is the first 8 bytes of the package id as hex (`paths.rs:148-161`; an earlier edition showed the full package id).
+- Server records state in `.onelf-<name>-<id8>.share` and clients acquire `.onelf-<name>-<id8>.lease`, where `<id8>` is the first 8 bytes of the package id as hex (`paths.rs:148-161`; an earlier edition showed the full package id, and an even earlier one doubled the `onelf-` prefix).
 - Subsequent launches enter the existing mount namespace (`setns(CLONE_NEWNS)`) or run from the host mountpoint, avoiding redundant decompression and memory page duplication.
 
 #### Mode 4: Ephemeral tmpfs (`crates/onelf-rt/src/ephemeral.rs:57-130` `[verified]`)
@@ -232,13 +232,13 @@ Concurrent launches of the same package share a single FUSE mount and daemon:
 
 #### Mode 5: Runtime Directory (`crates/onelf-rt/src/rundir.rs:26-160` `[verified]`)
 - **Trigger**: No user namespaces, no FUSE helper available.
-- **Mechanism**: Extracts into `$XDG_RUNTIME_DIR/onelf-<name>-<id8>-<pid>` or `/tmp/onelf-<uid>/<name>-<id8>-<pid>` (mode `0700`, `paths.rs:24-46,170-177`).
+- **Mechanism**: Extracts into `$XDG_RUNTIME_DIR/onelf-<name>-<id8>-<pid>` or `/tmp/onelf-<uid>/onelf-<name>-<id8>-<pid>` (mode `0700`, `paths.rs:24-52,170-177`). Here `<id8>` is the first 4 bytes of the package id as hex - 8 hex characters - via `package_dir_name`/`launch_dir_name` (`paths.rs:169-178`), a shorter prefix than the shared mount's 8-byte one.
 - **Teardown**: Forked parent monitors process death pipe. When all children and background daemons exit (`tree_quiet`, `rundir.rs:169-180`), the directory is recursively deleted.
 
 #### Mode 6: Persistent Disk Cache (`crates/onelf-rt/src/cache.rs:155-256` `[verified]`)
 - **Trigger**: Only when explicitly requested (`CACHE_REQUESTED` flag, `ONELF_CACHE=1`, or `ONELF_MODE=cache`).
-- **Mechanism**: Extracts under `~/.cache/onelf/pkg/<package_id>/`. Stores deduplicated files in content-addressable store (`cas/<hash>`) with hardlinks into package directory.
-- **Concurrency & GC**: Uses flock: `flock(LockShared)` on `lock/<package_id>` kept open through exec. Auto-GC (`auto_gc`) runs based on `ONELF_GC_MAX_AGE` (default 30 days) and acquires `flock(LockExclusive)`.
+- **Mechanism**: Extracts under `~/.cache/onelf/pkg/<package_id>/`. Stores deduplicated files in content-addressable store (`cas/<2-hex-char shard>/<blake3hex>-<mode>`, `cache.rs:281-288`) with hardlinks into package directory.
+- **Concurrency & GC**: Uses flock: `flock(LockShared)` on `lock/<package_id>` kept open through exec (`cache.rs:184-187`, inheritable fd per `paths.rs:54-60`). Auto-GC (`auto_gc`, `cache.rs:429-470`) runs based on `ONELF_GC_MAX_AGE` in days (default 30, `main.rs:343-350`) and acquires a non-blocking `flock(NonBlockingLockExclusive)` per victim (`cache.rs:491`), removing at most 5 packages per run.
 
 ---
 
@@ -265,7 +265,7 @@ Implemented in `crates/onelf-rt/src/update.rs` (`[verified]`).
 
 ### 4.4 Atomic Replacement & Rollback Recovery
 ```text
-1. Staged write to unpredictable temp file: self_path.with_file_name(".onelf-update.<pid>.<random_hex>.tmp")
+1. Staged write to unpredictable temp file: `.onelf-update.<pid>.<random_hex>.tmp` appended to `self_path`'s file name (`staged_path`, `update.rs:210-220`)
 2. Claim temp file exclusively (O_CREAT | O_EXCL)
 3. Delta assembly -> zsync verify -> Ed25519 signature verify -> revision check
 4. Backup existing binary to sibling: `<self_path>.onelf-prev` + fsync
@@ -291,7 +291,7 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
   - `mtime_nsec` is zeroed.
   - `SOURCE_DATE_EPOCH` clamps timestamps.
   - `[package] mtime = N` or `--mtime N` forces uniform timestamps across all entries.
-  - In `[sysroot]` builds, mtimes default to `0` unless overridden (`reproducible.md:57-60`).
+  - In `[sysroot]` builds, mtimes default to `0` unless overridden (`reproducible.md:60-63`).
 - **Attribution**: the mtime/`SOURCE_DATE_EPOCH` normalization, zeroed `mtime_nsec`, env `BTreeMap`, and sorted walks come from PR #22; the runtime `prefix_hash` is part of format v2 itself, not that PR (an earlier edition's "cargo registry path remapping" claim was unverified and is dropped).
 - **Non-determinism Sources**: Upstream package mirror updates (e.g. debian apt snapshot shifts) if not pinned to snapshot.debian.org; dynamically traced host runs (`onelf bundle --trace`) if trace captures non-hermetic host configuration.
 
@@ -307,7 +307,7 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 ### 6.2 Startup Flow and Latency Profile
 1. **ELF Header Parsing & Footer Discovery**: `lseek` to `FileSize - 76`. Read footer. Validate magic bytes `ONELF\0\x01\x00` and `FLENONE\0`. (Sub-millisecond).
-2. **Manifest Decompression**: Read `manifest_compressed` bytes at `manifest_offset`. Decompress with zstd. Verify the XXH32 manifest checksum (`loader.rs:61-67`). The `package_id` BLAKE3 is *not* recomputed at startup (it only names the cache directory); signature and `prefix_hash`/`footer_hash` checks happen only in `onelf verify` or self-update.
+2. **Manifest Decompression**: Read `manifest_compressed` bytes at `manifest_offset`. Decompress with zstd. Verify the XXH32 manifest checksum (`loader.rs:61-67`). The `package_id` BLAKE3 is *not* recomputed at startup (it only names on-disk paths: the cache tree, the lock file, and the private launch/mountpoint names); `prefix_hash`/`footer_hash` are checked only by `onelf verify` (`crates/onelf/src/verify.rs:54-75`), while the Ed25519 signature check runs in `onelf verify` and in self-update, which references neither structure hash.
 3. **Execution Mode Resolution**: Check `memfd` -> Check userns -> Check FUSE -> Check tmpfs.
 4. **FUSE Mount**: If Mode 2, `unshare(CLONE_NEWUSER | CLONE_NEWNS)`, mount FUSE, fork worker daemon.
 5. **Prefetch Optimization**: If the package contains a startup profile (stored as `.onelf/prefetch`, recorded at pack time from `ONELF_PROFILE` via `pack.rs:119-122`; an earlier edition called it `.onelf/startup.profile`, which exists nowhere), its blocks are decompressed ahead of demand by the FUSE server (`fuse/fs.rs:405+`; commit `822a654 feat: prefetch the blocks a startup profile lists` `[verified]`).
@@ -317,9 +317,9 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 ## 7. Open and Closed Issues, Pull Requests
 
-- **Issue #36 (OPEN)**: "more arch support" (`riscv64`, `ppc64`, `ppc64le`, `loongarch64`) `[reported]`.
-- **Issue #16 (CLOSED)**: "i686 build" (Addressed in PR #29, PR #30, and commit `7438f5a`) `[reported]`.
-- **Issue #14 (CLOSED)**: "[FR] Desktop Integration" (Author implemented `onelf integrate` subcommand and docs `https://onelf.qaidvoid.dev/guide/desktop`) `[reported]`.
+- **Issue #36 (OPEN)**: "more arch support" (`riscv64`, `ppc64`, `ppc64le`, `loongarch64`) `[verified: GitHub API 2026-10-18 - state open, title and arch list match the issue body]`.
+- **Issue #16 (CLOSED)**: "i686 build" (Addressed in PR #29, PR #30, and commit `7438f5a`) `[verified: GitHub API - state closed; PRs #29/#30 are commits 4eed307/914cdc1 and 7438f5a is the i686 GOT fix, all in git history]`.
+- **Issue #14 (CLOSED)**: "[FR] Desktop Integration" (Author implemented `onelf integrate` subcommand and docs `https://onelf.qaidvoid.dev/guide/desktop`) `[verified: GitHub API - state closed; Integrate/Unintegrate subcommands in crates/onelf/src/main.rs:288,299, crates/onelf/src/integrate.rs exists, docs page returns HTTP 200]`.
 - **PR #31 (MERGED)**: "fix(rt): keep the bundled libraries out of the app children". Stops setting `LD_LIBRARY_PATH` globally, switching to `--library-path` on linker invocation `[verified]`.
 - **PR #28 (MERGED)**: "feat: port bootstrap and env payloads to no_std Rust" for payload reproducibility `[verified]`.
 - **PR #26 (MERGED)**: "refactor: doc hygiene, internal dedup, remove onelf-preload". Completely deleted the LD_PRELOAD interposer crate `onelf-preload` in favor of cleaner ELF patching `[verified]`.
@@ -329,8 +329,8 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 ## 8. Author Admissions: TODOs, FIXMEs, and Known Limitations
 
-1. **Loader String Patching (`crates/onelf/src/bundle/elf.rs:1073-1090` `[verified]`)**:
-   Patches `/etc/`, `/usr/`, `/nix/`, `/lib/` inside the bundled glibc dynamic linker to `/XXX/`, and `/lib64/` to the length-preserving `/XXX///` (`loader_scrub_list`, `bundle/elf.rs:1073-1090`), to prevent loading host `/etc/ld.so.preload` or host cache files.
+1. **Loader String Patching (`crates/onelf/src/bundle/elf.rs:1070-1087` `[verified]`)**:
+   Patches `/etc/`, `/usr/`, `/nix/`, `/lib/` inside the bundled glibc dynamic linker to `/XXX/`, and `/lib64/` to the length-preserving `/XXX///` (`loader_scrub_list`, `bundle/elf.rs:1070-1087`), to prevent loading host `/etc/ld.so.preload` or host cache files.
 2. **Dynamic Linker & Host Libc Coupling**:
    If host glibc has incompatible or newer symbol versions than bundled glibc, the entire glibc family must be swapped or remain bundled. If an application requires a host library that needs a newer glibc than bundled, but host glibc cannot be safely loaded, `Choice::Incomparable` forces bundled fallback, which can fail at runtime.
 3. **No SUID Binary Support in userns**:
@@ -342,10 +342,10 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 ## 9. Git History Analysis (342 Commits)
 
-- **v0.1.0 - v0.2.0 (Foundational Phase)**: Custom zstd block format with footer, `memfd` and FUSE execution modes from the earliest releases. No SquashFS appears anywhere in the repository's history (an earlier edition of this section claimed squashfs experiments; `git grep` over every tree and every commit message finds zero occurrences). `onelf-preload` (C/Rust `dlopen` interposer) enters in the 0.2.0 era (added in `6977832`, 2026-04-16).
-- **v0.2.0 - v0.3.0 (Architecture Stabilization)**: Abandoned `onelf-preload` because `LD_PRELOAD` failed with statically linked binaries, broke with SUID, and leaked into subprocesses. Replaced with in-tree no_std Rust bootstrap payloads and binary ELF patching.
+- **v0.1.0 - v0.2.0 (Foundational Phase)**: Custom zstd block format with footer, `memfd` and FUSE execution modes from the earliest releases. No SquashFS appears anywhere in the repository's history (an earlier edition of this section claimed squashfs experiments; `git grep` over every tree and every commit message finds zero occurrences). `onelf-preload` (a Rust `cdylib` exposing a C ABI that intercepted `execve` under `LD_PRELOAD`) enters in the 0.2.0 era (added in `6977832`, 2026-04-16).
+- **v0.2.0 - v0.3.0 (Architecture Stabilization)**: Abandoned `onelf-preload` because `LD_PRELOAD` failed with statically linked binaries, broke with SUID, and leaked into subprocesses `[inferred]` (no commit or doc states the full rationale; docs only partly support it - `docs/guide/recipe.md:264` on the interpreter being wiped by a sandboxed re-exec, `docs/reference/env-vars.md:11` on setuid ignoring `ONELF_*`). Replaced with in-tree no_std Rust bootstrap payloads and binary ELF patching.
 - **v0.3.0 - v0.4.0 (Hardening & Enterprise Polish)**: Format v2/v3 transition; Per-block 64 KiB BLAKE3 content hashing for lazy single-block FUSE verification; Strict HTTPS Ed25519 signed zsync updates with revision anti-rollback; Multi-process FUSE mount sharing (`crates/onelf-rt/src/fuse/share.rs`); Profile-guided startup block prefetching.
-- **v0.4.1 (Current)**: i686 support; tuning default payload block size to 64 KiB; hardening FUSE server against race conditions.
+- **v0.4.1 (Current)**: i686 payload fixes (`0d655cf` lets bootstrap asserts link without a GOT, `7438f5a` allows the i686 GOT header and forbids relocations instead); a test hardening reclamation of a shared FUSE mount after a killed server (`b55fbd5`). (i686 support itself shipped earlier, in 0.3.0/0.3.1 via PRs #29/#30; the 64 KiB payload block-size default landed in 0.4.0 via `6b08951`; multi-process FUSE mount sharing shipped in 0.4.0 via `900a7a9`.)
 
 ---
 

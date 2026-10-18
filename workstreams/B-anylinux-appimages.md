@@ -16,14 +16,14 @@ Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylin
 - **`pkgforge-dev/appimagetool`** (`pkgforge-dev/appimagetool` [verified]): A pure Rust tool that patches ELF sections (`.upd_info`, `.runtime_settings`, `.runtime_env`), invokes `mkdwarfs`, and generates `.zsync` files.
 
 ### 1.2 Closure Tracing
-`quick-sharun.sh` implements recursive `ldd` and `strace`/`LD_DEBUG=libs` dynamic execution sweeps (`_lib4bin_collect_ldd`, lines 1669-1815 [verified]). It launches target binaries inside an Arch Linux build environment, tracing all dynamic library openings (including runtime `dlopen()` calls), and stages the resolved `.so` files into `$APPDIR/shared/lib`.
+`quick-sharun.sh` implements two collectors [verified]: `_lib4bin_collect_ldd` (line 1669; one `ldd` pass per input plus a `patchelf --print-needed` cross-check - a single pass, not recursive) and `_lib4bin_collect_strace` (lines 1728-1815), which runs the target under `LD_DEBUG=libs` (gated behind `STRACE_MODE=1`) to catch runtime `dlopen()` calls. It launches target binaries inside an Arch Linux build environment and stages the resolved `.so` files into `$APPDIR/shared/lib`. [Corrected: an earlier edition called the ldd sweep recursive and strace-based.]
 
 ---
 
 ## 2. Libc Handling and Kernel Portability
 
 ### 2.1 Complete Glibc Bundling
-- Bundles full modern glibc (Arch Linux glibc 2.40 to 2.44) and dynamic linker (`ld-linux-x86-64.so.2`) into `$APPDIR/shared/lib`.
+- Bundles the current Arch glibc and dynamic linker (`ld-linux-x86-64.so.2`) into `$APPDIR/shared/lib` [corrected: an earlier edition claimed "glibc 2.40 to 2.44", which no file in the repo states; the bundled version is whatever the Arch build image provides, and Arch glibc is built with `--enable-kernel=4.4` per FAQ.md].
 - Bypasses host glibc completely: passes `--library-path` directly to the bundled dynamic linker.
 - Maps application binaries via **`userland-execve`**, keeping `/proc/self/exe` pointing to the actual application rather than `ld-linux.so`.
 
@@ -43,7 +43,7 @@ Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylin
 ## 3. Host Integration: GPU, Wayland, and Desktop
 
 ### 3.1 GPU Driver Interoperability
-- **Default (Bundled Mesa):** Bundles debloated Mesa (20–35 MB, stripped of LLVM and non-essential drivers) directly inside the AppImage [verified].
+- **Default (Bundled Mesa):** Bundles debloated Mesa (stripped of LLVM and non-essential drivers) directly inside the AppImage [corrected: the "20-35 MB" figure in an earlier edition is not a repo number; `HOW-TO-MAKE-THESE.md` documents whole-AppImage results under 35 MiB].
 - **Experimental (Host Drivers):** When `USE_HOST_DRIVERS_EXPERIMENTAL=1`, `cross-libc-dlopen.so` interposes `dlopen()`. It parses ELF headers in memory, rewrites `DT_VERNEED` entries with neutral tags (`CLD_NEUTRAL_TAG`), and strips musl dependencies [verified]. Forwarding shims (`gl-fwd.so`, `egl-fwd.so`, `gles-fwd.so`) resolve host OpenGL calls without GLVND dependencies.
 - **NVIDIA Proprietary:** Probes `/sys/module/nvidia/version` and dynamically injects host NVIDIA paths (`/usr/lib64`, `/run/opengl-driver/lib`), orders NVIDIA first in `__EGL_VENDOR_LIBRARY_FILENAMES`, and appends NVIDIA ICDs to `VK_DRIVER_FILES`.
 
@@ -56,8 +56,8 @@ Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylin
 
 ## 4. Runtime, Compression, and Startup Mechanics
 
-- **DwarFS Filesystem:** Employs DwarFS with Zstandard compression (`zstd:level=22 -S26 -B6`) [verified]. Provides cross-file segment deduplication, achieving 30% to 50% smaller sizes than SquashFS.
-- **Profile-Guided Launch Optimization (`OPTIMIZE_LAUNCH=1`):** Analyzes block access patterns during startup and groups blocks by hotness (`--categorize=hotness`), resulting in sub-300ms startup times [verified].
+- **DwarFS Filesystem:** Employs DwarFS with Zstandard compression (`-C zstd:level=5 -S19`) [corrected: `zstd:level=22 -S26 -B2` appears only inside a comment example at `appimagetool/src/dwarfs.rs:104`; the flags actually used are at line 48]. Provides cross-file segment deduplication; "30% to 50% smaller than SquashFS" is their reported figure, not independently measured.
+- **Profile-Guided Launch Optimization (`OPTIMIZE_LAUNCH=1`):** Analyzes block access patterns during startup and groups blocks by hotness (`--categorize=hotness` is passed by `appimagetool/src/dwarfs.rs:98`; the feature is documented at `HOW-TO-MAKE-THESE.md:158`); sub-300 ms startup is their reported figure, not measured here.
 - **3-Tier Execution Fallback:**
   1. Direct FUSE mount via `squashfuse_ll` / `dwarfs` driver.
   2. Unprivileged user & mount namespaces (`unshare`).
@@ -81,7 +81,7 @@ Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylin
 |---|---|---|
 | **Build Architecture** | Declarative `onelf.toml` + pure Rust CLI | Imperative 170 KB Bash script (`quick-sharun.sh`) |
 | **Kernel Floor** | Linux 3.17+ (`memfd`) / 3.8+ (`userns`) | Linux 2.6.17+ (via ptrace syscall emulation) |
-| **Compression** | 64 KiB zstd blocks | DwarFS (zstd-22, global segment dedup) |
-| **In-Memory Exec** | Native `memfd_create` (<1 ms) | Not supported (requires mount or extract) |
+| **Compression** | 64 KiB zstd blocks | DwarFS (zstd:level=5, -S19, global segment dedup) |
+| **In-Memory Exec** | Native `memfd_create` (<1 ms design target) | Not supported (requires mount or extract) |
 | **GPU Approach** | Symbol-version superset match into host | Bundled debloated Mesa or `cross-libc-dlopen` |
 | **Security/Integrity** | Signed updates (Ed25519) | Unchecked GPG or unsigned |

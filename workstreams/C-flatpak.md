@@ -9,7 +9,7 @@
 
 ### 1.1 OSTree Storage Model
 Flatpak is built on **OSTree** operating in `OSTREE_REPO_MODE_BARE_USER_ONLY` (`flatpak/common/flatpak-dir.c:5023` [verified]). 
-- When an application or runtime is installed, files are checked out as **POSIX hard links** pointing directly into the content-addressed object store (`flatpak-dir.c:5690` [verified]).
+- When an application or runtime is installed, files are checked out as **POSIX hard links** pointing directly into the content-addressed object store (deploy checkout at `flatpak-dir.c:10134-10168`; line 5690 is the appstream checkout, same pattern) [verified, line corrected].
 - Applications sharing identical files (e.g. standard runtime libraries, icons, fonts) consume zero additional disk space.
 - The Linux kernel page cache indexes memory pages by `(device, inode)`. Because files are hardlinked to identical inodes on disk, multiple running Flatpak applications share physical RAM pages for identical libraries [verified].
 
@@ -22,10 +22,10 @@ Flatpak is built on **OSTree** operating in `OSTREE_REPO_MODE_BARE_USER_ONLY` (`
 Flatpak constructs an isolated container using Bubblewrap (`flatpak-run.c:3656` [verified]):
 - Mounts runtime at `/usr` (`--ro-bind-fd runtime_fd /usr`) and app at `/app` (`--ro-bind-fd app_fd /app`).
 - Unshares user namespaces (`--disable-userns`), PID namespaces (`--unshare-pid`), and network namespaces (`--unshare-net`).
-- Implements strict Seccomp-BPF filters (`flatpak-run.c:1979-2275` [verified]): blocks terminal injection (`TIOCSTI`/`TIOCLINUX`), `clone3` (CVE-2021-41133), `syslog`, `keyctl`, and restricts socket domains strictly to `AF_UNSPEC`, `AF_LOCAL`, `AF_INET`, `AF_INET6`, and `AF_NETLINK`.
+- Implements strict Seccomp-BPF filters (`flatpak-run.c:2013-2110` blocklist [verified, range corrected]): blocks terminal injection (`TIOCSTI`/`TIOCLINUX`), `clone3` (returns `ENOSYS` so glibc falls back to `clone`, per the in-code CVE-2021-41133 comment), `syslog`, `keyctl`, and restricts socket domains to `AF_UNSPEC`, `AF_LOCAL`, `AF_INET`, `AF_INET6`, and `AF_NETLINK` (plus flag-gated `AF_CAN`/`AF_BLUETOOTH`).
 
 ### 1.4 Portals and D-Bus Mediation
-- Direct access to the host D-Bus daemon is severed. All D-Bus calls pass through `xdg-dbus-proxy` (`flatpak-run-dbus.c:135` [verified]).
+- By default, host D-Bus access is proxied through `xdg-dbus-proxy` (built from the vendored `xdg-dbus-proxy` subproject). An explicit `--socket=session-bus`/`--socket=system-bus` instead bind-mounts the real bus socket and bypasses the proxy entirely [nuance added].
 - Host file access is mediated via `org.freedesktop.portal.FileChooser` and `xdg-document-portal`, which exposes selected files via a virtual FUSE mount at `/run/flatpak/doc/` [verified].
 
 ### 1.5 Single-File `.flatpak` Bundles

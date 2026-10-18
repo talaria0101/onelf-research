@@ -1,7 +1,7 @@
 # Deep-Dive Technical Research Report: onelf Internal Architecture
 
 **Target Repository:** `QaidVoid/onelf` (https://github.com/QaidVoid/onelf)  
-**Analyzed Commits:** 342 commits up to commit `7438f5a` / tag `v0.4.1`  
+**Analyzed Commits:** 342 commits; audited at HEAD `7438f5a`, which is one commit past tag `0.4.1` (the repo tags releases without a `v` prefix; `0.4.1` points at `587f673`)  
 **Crates Analyzed:** `onelf`, `onelf-format`, `onelf-rt`, `onelf-sysroot`, `onelf-payloads` (and former `onelf-preload`)  
 **Evidence Standard:** Every factual claim is marked as `[verified]` (observed directly in code/docs), `[reported]` (stated in GitHub PR/issue/commit messages), or `[inferred]` (derived through technical deduction).
 
@@ -33,7 +33,7 @@ An `onelf` executable is a contiguous, self-contained ELF executable container c
 ```
 
 ### 1.2 Footer Specification (76 Bytes Fixed)
-Located at the exact end of the file (`crates/onelf-format/src/footer.rs:14-28, 53-65` `[verified]`):
+Located at the exact end of the file (size constant and magics at `crates/onelf-format/src/footer.rs:53-55`, struct at `footer.rs:154-176`, field encoding in `write_to` at `footer.rs:213-225`; an earlier edition cited `footer.rs:14-28`, which is the doc-comment table) `[verified]`:
 
 | Offset | Size (Bytes) | Field Name | Type / Encoding | Description |
 |---|---|---|---|---|
@@ -50,7 +50,7 @@ Located at the exact end of the file (`crates/onelf-format/src/footer.rs:14-28, 
 | `64` | `4` | `manifest_checksum` | `[u8; 4]` | Little-endian XXH32 of uncompressed manifest bytes |
 | `68` | `8` | `end_magic` | `[u8; 8]` | Fixed trailer magic: `*b"FLENONE\0"` |
 
-#### Footer Flags (`crates/onelf-format/src/footer.rs:66-103` `[verified]`):
+#### Footer Flags (`crates/onelf-format/src/footer.rs:66-101` `[verified]`):
 - `1 << 0` (`HAS_DICT`): Package payload blocks were compressed against the embedded dictionary.
 - `1 << 1` (`MEMFD_HINT`): Indicates potential eligibility for in-memory execution.
 - `1 << 2`: Reserved (formerly reserved for sharun compatibility, never shipped).
@@ -107,7 +107,7 @@ Serialized as a 65-byte header followed by `num_blocks * BLOCK_SIZE`:
 ### 2.1 Bundled vs. Host Selection Philosophy
 `onelf` avoids `LD_LIBRARY_PATH` pollution (`crates/onelf-rt/src/env.rs:7-13`, commit `1e5385e` `[verified]`). Host library directories are never placed on the general search path because unbundled dependencies would silently load random host libraries into the bundled libc environment.
 
-Instead, `onelf-format::resolve` uses **symbol version set comparison** (`verdef.rs`) and **materializes an ephemeral symlink farm** containing only approved host libraries (`crates/onelf-format/src/resolve.rs:217-260` `[verified]`).
+Instead, `onelf-format::resolve` uses **symbol version set comparison** (`verdef.rs`) and **materializes an ephemeral symlink farm** containing only approved host libraries (selection in `resolve()` at `resolve.rs:217-258`; farm written by `materialize()` at `resolve.rs:645-679`) `[verified]`.
 
 ### 2.2 Host Driver Discovery & Closure Walking
 1. **Host Indexing (`HostIndex::load`, `resolve.rs:387-423`) `[verified]`**:
@@ -144,7 +144,7 @@ pub fn compare(bundle: &VersionSet, host: &VersionSet) -> Choice {
 ### 2.4 Glibc Version Conflicts and Loader Coupling
 `libc.so.6` and the dynamic linker `ld-linux*.so` are strictly coupled:
 ```rust
-// crates/onelf-format/src/resolve.rs:312-336 [verified]
+// crates/onelf-format/src/resolve.rs:310-335 [verified]
 if let (true, Some(bundled_libc), Some(host_libc)) =
     (req.host_libc, bundled.get(LIBC), host.libs.get(LIBC))
 {
@@ -171,15 +171,15 @@ if let (true, Some(bundled_libc), Some(host_libc)) =
 }
 ```
 If the host glibc is newer than the bundled glibc and `req.host_libc` is enabled:
-1. The **entire glibc family** (`libc.so`, `libm.so`, `libpthread.so`, `libdl.so`, `librt.so`, `libresolv.so`, `libutil.so`, `libnss_*`, `ld-linux*`, etc., `resolve.rs:177-192`) is switched to the host copies as a unit.
-2. The entrypoint is executed with the **host dynamic linker** (`decision.host_interp`), passed via the `ONELF_INTERP` environment variable to the injected bootstrap (`bootstrap.rs:509-514`).
+1. The **entire glibc family** (`libc.so`, `libm.so`, `libpthread.so`, `libdl.so`, `librt.so`, `libresolv.so`, `libutil.so`, `libnss_*`, `ld-linux*`, etc., `resolve.rs:177-193`; the actual `LIBC_FAMILY` list is a superset of this and also includes `libanl.so`, `libBrokenLocale.so`, `libmvec.so`, `libc_malloc_debug.so`, `libthread_db.so`) is switched to the host copies as a unit.
+2. The entrypoint is executed with the **host dynamic linker** (`decision.host_interp`), passed via the `ONELF_INTERP` environment variable to the injected bootstrap (set in `onelf-rt/src/launch.rs:332`, consumed by `env_interp_override` in `onelf-payloads/src/bootstrap.rs:659-673`; an earlier edition cited a nonexistent `bootstrap.rs:509-514`).
 3. If host glibc is older or incompatible, the bundle glibc and loader remain active.
 
 ---
 
 ## 3. Execution-Mode Fallback Chain
 
-`onelf-rt` attempts execution rungs in a strict waterfall (`crates/onelf-rt/src/main.rs:165-350` `[verified]`):
+`onelf-rt` attempts execution rungs in a strict waterfall (order comment and dispatch at `crates/onelf-rt/src/main.rs:160-333` `[verified]`):
 
 ```text
 [Mode 1: memfd]
@@ -204,7 +204,7 @@ If the host glibc is newer than the bundled glibc and `req.host_libc` is enabled
 
 #### Mode 1: `memfd` (`crates/onelf-rt/src/memfd.rs` & `main.rs:166-226` `[verified]`)
 - **Trigger**: Single static ELF entrypoint (no `DT_NEEDED`), or `[package] memfd = true`, and verified content hash matching BLAKE3.
-- **Mechanism**: Calls `memfd_create("onelf-bin", MFD_CLOEXEC)`. Decompresses payload blocks into memory fd, seals with `fchmod`, executes `/proc/self/fd/<fd>`.
+- **Mechanism**: Calls `memfd_create("onelf", 0)` (`memfd.rs:16-17`; the fd name is `onelf`, there is no `MFD_CLOEXEC`, and no `F_ADD_SEALS`/`fchmod` sealing anywhere in the crate - an earlier edition's "seals it" was wrong). Decompresses the entrypoint payload into the memory fd (BLAKE3-verified against the entry's `content_hash` first, `main.rs:175-183`), then executes `/proc/self/fd/<fd>`. If memfd execution fails while not forced, the failure is silent and the ladder continues.
 - **Privilege/Security**: Zero filesystem footprint. No mount or extraction.
 - **Teardown**: Automatically reaped by kernel on process termination.
 
@@ -218,12 +218,11 @@ If the host glibc is newer than the bundled glibc and `req.host_libc` is enabled
 - **Trigger**: User namespaces disabled (e.g. Ubuntu 23.10+ AppArmor restrictions) or package requires setuid (`needs-setuid = true`).
 - **Mechanism**: Creates `socketpair(AF_UNIX, SOCK_STREAM)`. Invokes `fusermount3 -o ro,nosuid,nodev,noatime,default_permissions -- <mountpoint>` with `_FUSE_COMMFD=<sock>`. Receives `/dev/fuse` fd via `SCM_RIGHTS` ancillary message.
 - **Privilege/Security**: Requires SUID `fusermount3` (or SUID `fusermount`). Mount is host-visible.
-- **Teardown & Cleanup**: Death pipe (`pipe2(O_CLOEXEC)`) detects child exit (`fuse/mod.rs:427-435`). On normal exit, parent unmounts via `fusermount3 -u -z -q`. If server was SIGKILLed, next launch sweeps stale disconnected mounts via `sweep_stale_mountpoints` (`paths.rs:240-270`).
+- **Teardown & Cleanup**: Death pipe (`pipe2(O_CLOEXEC)`) detects child exit (`fuse/mod.rs:427-435`). On normal exit, parent unmounts via `fusermount3 -u -z -q`. If server was SIGKILLed, next launch sweeps stale disconnected mounts via `sweep_stale_mountpoints` (`paths.rs:298`).
 
 #### FUSE Instance Sharing (`crates/onelf-rt/src/fuse/share.rs` `[verified]`):
 Concurrent launches of the same package share a single FUSE mount and daemon:
-- Server records state in `.onelf-<name>-<package_id>.share`.
-- Clients acquire a lease file `.onelf-<name>-<package_id>.lease`.
+- Server records state in `.onelf-onelf-<name>-<id8>.share` and clients acquire `.onelf-onelf-<name>-<id8>.lease`, where `<id8>` is the first 8 bytes of the package id as hex (`paths.rs:148-161`; an earlier edition showed the full package id).
 - Subsequent launches enter the existing mount namespace (`setns(CLONE_NEWNS)`) or run from the host mountpoint, avoiding redundant decompression and memory page duplication.
 
 #### Mode 4: Ephemeral tmpfs (`crates/onelf-rt/src/ephemeral.rs:57-130` `[verified]`)
@@ -233,7 +232,7 @@ Concurrent launches of the same package share a single FUSE mount and daemon:
 
 #### Mode 5: Runtime Directory (`crates/onelf-rt/src/rundir.rs:26-160` `[verified]`)
 - **Trigger**: No user namespaces, no FUSE helper available.
-- **Mechanism**: Extracts into `$XDG_RUNTIME_DIR/onelf-<name>-<pid>` or `/tmp/onelf-<uid>/<name>-<pid>` (mode `0700`).
+- **Mechanism**: Extracts into `$XDG_RUNTIME_DIR/onelf-<name>-<id8>-<pid>` or `/tmp/onelf-<uid>/<name>-<id8>-<pid>` (mode `0700`, `paths.rs:24-46,170-177`).
 - **Teardown**: Forked parent monitors process death pipe. When all children and background daemons exit (`tree_quiet`, `rundir.rs:169-180`), the directory is recursively deleted.
 
 #### Mode 6: Persistent Disk Cache (`crates/onelf-rt/src/cache.rs:155-256` `[verified]`)
@@ -292,8 +291,8 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
   - `mtime_nsec` is zeroed.
   - `SOURCE_DATE_EPOCH` clamps timestamps.
   - `[package] mtime = N` or `--mtime N` forces uniform timestamps across all entries.
-  - In `[sysroot]` builds, mtimes default to `0` unless overridden (`reproducible.md:47-51`).
-- **Runtime Remapping**: Embedded runtime ELF is compiled with cargo registry path remapping.
+  - In `[sysroot]` builds, mtimes default to `0` unless overridden (`reproducible.md:57-60`).
+- **Attribution**: the mtime/`SOURCE_DATE_EPOCH` normalization, zeroed `mtime_nsec`, env `BTreeMap`, and sorted walks come from PR #22; the runtime `prefix_hash` is part of format v2 itself, not that PR (an earlier edition's "cargo registry path remapping" claim was unverified and is dropped).
 - **Non-determinism Sources**: Upstream package mirror updates (e.g. debian apt snapshot shifts) if not pinned to snapshot.debian.org; dynamically traced host runs (`onelf bundle --trace`) if trace captures non-hermetic host configuration.
 
 ---
@@ -308,10 +307,10 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 ### 6.2 Startup Flow and Latency Profile
 1. **ELF Header Parsing & Footer Discovery**: `lseek` to `FileSize - 76`. Read footer. Validate magic bytes `ONELF\0\x01\x00` and `FLENONE\0`. (Sub-millisecond).
-2. **Manifest Decompression**: Read `manifest_compressed` bytes at `manifest_offset`. Decompress with zstd. Verify XXH32 checksum and `package_id` BLAKE3 hash.
+2. **Manifest Decompression**: Read `manifest_compressed` bytes at `manifest_offset`. Decompress with zstd. Verify the XXH32 manifest checksum (`loader.rs:61-67`). The `package_id` BLAKE3 is *not* recomputed at startup (it only names the cache directory); signature and `prefix_hash`/`footer_hash` checks happen only in `onelf verify` or self-update.
 3. **Execution Mode Resolution**: Check `memfd` -> Check userns -> Check FUSE -> Check tmpfs.
 4. **FUSE Mount**: If Mode 2, `unshare(CLONE_NEWUSER | CLONE_NEWNS)`, mount FUSE, fork worker daemon.
-5. **Prefetch Optimization**: If package contains startup profile (`.onelf/startup.profile`), blocks are decompressed sequentially in background ahead of demand (`822a654 feat: prefetch the blocks a startup profile lists` `[verified]`).
+5. **Prefetch Optimization**: If the package contains a startup profile (stored as `.onelf/prefetch`, recorded at pack time from `ONELF_PROFILE` via `pack.rs:119-122`; an earlier edition called it `.onelf/startup.profile`, which exists nowhere), its blocks are decompressed ahead of demand by the FUSE server (`fuse/fs.rs:405+`; commit `822a654 feat: prefetch the blocks a startup profile lists` `[verified]`).
 6. **Exec**: Entrypoint executed via dynamic linker or direct `execve`.
 
 ---
@@ -330,8 +329,8 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 ## 8. Author Admissions: TODOs, FIXMEs, and Known Limitations
 
-1. **Loader String Patching (`crates/onelf/src/bundle/elf.rs:1073-1084` `[verified]`)**:
-   Patches `/etc/`, `/usr/`, `/nix/`, `/lib/`, `/lib64/` inside the bundled glibc dynamic linker to `/XXX/` to prevent loading host `/etc/ld.so.preload` or host cache files.
+1. **Loader String Patching (`crates/onelf/src/bundle/elf.rs:1073-1090` `[verified]`)**:
+   Patches `/etc/`, `/usr/`, `/nix/`, `/lib/` inside the bundled glibc dynamic linker to `/XXX/`, and `/lib64/` to the length-preserving `/XXX///` (`loader_scrub_list`, `bundle/elf.rs:1073-1090`), to prevent loading host `/etc/ld.so.preload` or host cache files.
 2. **Dynamic Linker & Host Libc Coupling**:
    If host glibc has incompatible or newer symbol versions than bundled glibc, the entire glibc family must be swapped or remain bundled. If an application requires a host library that needs a newer glibc than bundled, but host glibc cannot be safely loaded, `Choice::Incomparable` forces bundled fallback, which can fail at runtime.
 3. **No SUID Binary Support in userns**:
@@ -343,7 +342,7 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 ## 9. Git History Analysis (342 Commits)
 
-- **v0.1.0 - v0.2.0 (Foundational Phase)**: Basic packer, squashfs experiments, reliance on `onelf-preload` (C/Rust dynamic library interposer for `dlopen` hooking).
+- **v0.1.0 - v0.2.0 (Foundational Phase)**: Custom zstd block format with footer, `memfd` and FUSE execution modes from the earliest releases. No SquashFS appears anywhere in the repository's history (an earlier edition of this section claimed squashfs experiments; `git grep` over every tree and every commit message finds zero occurrences). `onelf-preload` (C/Rust `dlopen` interposer) enters in the 0.2.0 era (added in `6977832`, 2026-04-16).
 - **v0.2.0 - v0.3.0 (Architecture Stabilization)**: Abandoned `onelf-preload` because `LD_PRELOAD` failed with statically linked binaries, broke with SUID, and leaked into subprocesses. Replaced with in-tree no_std Rust bootstrap payloads and binary ELF patching.
 - **v0.3.0 - v0.4.0 (Hardening & Enterprise Polish)**: Format v2/v3 transition; Per-block 64 KiB BLAKE3 content hashing for lazy single-block FUSE verification; Strict HTTPS Ed25519 signed zsync updates with revision anti-rollback; Multi-process FUSE mount sharing (`crates/onelf-rt/src/fuse/share.rs`); Profile-guided startup block prefetching.
 - **v0.4.1 (Current)**: i686 support; tuning default payload block size to 64 KiB; hardening FUSE server against race conditions.

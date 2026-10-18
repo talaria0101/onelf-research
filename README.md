@@ -7,8 +7,9 @@
 ## Navigation & Repository Structure
 
 - **[Master Deliverable: Full Report (REPORT.md)](REPORT.md)**: The complete, dense systems architecture report covering the feature matrix, wins, gaps, 10 evaluated feature candidates, the 3-feature killer roadmap, and open questions for the author.
+- **[Fact-Check Audit (AUDIT.md)](AUDIT.md)**: The 2026-10-18 verification pass over this repo against the `onelf` source at HEAD `7438f5a`: which claims held, which citations were wrong, and what was corrected in place.
 - **[Workstream A: onelf Internals & Architecture](workstreams/A-onelf-internals.md)**: Deep dive into all crates (`onelf`, `onelf-format`, `onelf-rt`, `onelf-sysroot`, `onelf-payloads`), format v2/v3 layout, 76-byte footer, 6-rung fallback ladder, symbol resolver, self-update, determinism, and 342-commit history.
-- **[Workstream B: Anylinux-AppImages & Tooling](workstreams/B-anylinux-appimages.md)**: Analysis of `quick-sharun.sh`, `Anylinux-sharun`, `uruntime`, `cross-libc-dlopen`, glibc 2.40 bundling, in-place dynamic linker patching (`/etc` -> `/KEK`), DwarFS compression, and kernel 2.6.17 syscall emulation.
+- **[Workstream B: Anylinux-AppImages & Tooling](workstreams/B-anylinux-appimages.md)**: Analysis of `quick-sharun.sh`, `Anylinux-sharun`, `uruntime`, `cross-libc-dlopen`, glibc bundling, in-place dynamic linker patching (`/etc` -> `/KEK`), DwarFS compression, and kernel 2.6.17 syscall emulation.
 - **[Workstream C: Flatpak Architecture & Inherent Limits](workstreams/C-flatpak.md)**: Technical breakdown of OSTree CAS hardlinking, runtimes, Bubblewrap sandboxing, Seccomp filters, XDG Desktop Portals, single-file `.flatpak` bundles, and CLI/pipeline failure modes.
 - **[Workstream D: nix-appimage & Nix Closures](workstreams/D-nix-appimage.md)**: Analysis of input-addressed closures, two-pass SquashFS layering, `/nix/store` runtime namespace mapping, NixOS host collisions, and unprivileged user namespace crashes.
 - **[Workstream E: Linux Portable Packaging Pain Points](workstreams/E-pain-points.md)**: Quantified and ranked matrix of real-world failure modes: the FUSE2 crisis, glibc forward/reverse mismatches, Mesa/NVIDIA driver ABI breaks, Wayland fractional scaling quirks, startup latency, and zsync bitrot.
@@ -18,14 +19,14 @@
 
 ## Executive Summary & Verdict
 
-**`onelf` (v0.4.1, commit `7438f5a`) is the most architecturally elegant single-file executable packaging engine for modern Linux, but it currently occupies an unstable middle ground between minimal runtime agility and enterprise-grade completeness.** 
+**`onelf` (release 0.4.1, tag `0.4.1`; audited at HEAD `7438f5a`) is the most architecturally elegant single-file executable packaging engine for modern Linux, but it currently occupies an unstable middle ground between minimal runtime agility and enterprise-grade completeness.** 
 
 By fusing a static musl ELF runtime launcher (`onelf-rt`), a zstd block-compressed payload format with 64 KiB BLAKE3 verification (`onelf-format`), and an in-process ELF symbol-version resolver (`verdef.rs`, `resolve.rs`), it achieves what AppImage, Flatpak, and `nix-appimage` cannot: 
-1. Sub-millisecond in-memory execution (`memfd_create`) for static payloads with zero filesystem residue.
+1. In-memory execution (`memfd_create`) for static payloads with zero filesystem residue (<1 ms is the design target; no benchmark exists in the repo).
 2. A resilient 6-rung execution fallback ladder that operates even when both FUSE and user namespaces are disabled.
-3. Automated host GPU driver discovery without `LD_LIBRARY_PATH` pollution.
+3. Automated host GPU driver discovery without `LD_LIBRARY_PATH` pollution, plus (since v0.4.0) an automatic fetch of the recipe's pinned GL build when the host has none.
 
-However, `onelf` is held back by three critical deficiencies: its manifest integrity is cryptographically unkeyed at rest (relying on an unkeyed XXH32 checksum and detached Ed25519 signatures checked only during updates), it provides zero native sandboxing boundaries against malicious ambient authority, and its sysroot build engine (`onelf-sysroot`) lacks deterministic lockfiles, leaving builds vulnerable to upstream package mirror drift. 
+However, `onelf` is held back by three critical deficiencies: its manifest integrity is cryptographically unkeyed at rest (relying on an unkeyed XXH32 checksum and detached Ed25519 signatures checked only during updates), it provides zero native sandboxing boundaries against malicious ambient authority, and its sysroot builds are only reproducible when the recipe pins the sysroot archive by BLAKE3 hash (supported since v0.4.0, with provenance in `.onelf/provenance.toml`); unpinned recipes drift with upstream images. 
 
 If it formalizes at-rest Merkle tree signatures, in-process Landlock/seccomp sandboxing, and direct-release range-request delta updates, `onelf` will establish an unassailable identity as the premier self-contained application format for Linux.
 
@@ -37,14 +38,14 @@ If it formalizes at-rest Merkle tree signatures, in-process Landlock/seccomp san
 | :--- | :--- | :--- | :--- | :--- |
 | **Packaging Target** | Single self-contained ELF executable | Single executable AppImage (Type 2/uruntime) | Multi-file deployment into OSTree CAS | Single executable AppImage wrapper |
 | **Installation Requirement** | **None** (`chmod +x && ./app`) | **None** (`chmod +x && ./app`) | **Mandatory** (`flatpak install`) | **None** (`chmod +x && ./app`) |
-| **In-Memory Exec (`memfd`)** | **Yes (<1 ms)** | No (FUSE mount or `/tmp` extract) | No (bwrap mount namespace) | No (FUSE mount) |
+| **In-Memory Exec (`memfd`)** | **Yes (<1 ms design target)** | No (FUSE mount or `/tmp` extract) | No (bwrap mount namespace) | No (FUSE mount) |
 | **Execution Fallback Chain** | **6 rungs** (memfd -> FUSE -> tmpfs -> rundir) | 3 rungs (FUSE -> userns -> extract) | None (fails without daemon/bwrap) | None (crashes if userns disabled) |
-| **Host Driver Integration** | In-process symbol-version superset match | Bundled debloated Mesa or `cross-libc-dlopen` | Host-matched runtime extensions | Broken (requires manual nixGL) |
+| **Host Driver Integration** | In-process symbol-version superset match + pinned-GL fetch | Bundled debloated Mesa or `cross-libc-dlopen` | Host-matched runtime extensions | Broken (requires manual nixGL) |
 | **Application Sandboxing** | None (ambient user authority) | None (unconfined) | Strict (bwrap + seccomp + portals) | Incidental (path remapping only) |
 | **Delta Updates** | Built-in `zsync-rs` (strict HTTPS + Ed25519) | `.zsync` via `appimageupdatetool` | OSTree static binary deltas | None (full re-download) |
-| **Startup Latency (Cold)** | **0.5–5 ms** | Sub-300 ms (DwarFS PGO) | 50–200 ms (bwrap + dbus-proxy) | 40–150 ms (FUSE + shell + bwrap) |
+| **Startup Latency (Cold)** | **0.5–5 ms** (design estimate, unmeasured) | Sub-300 ms (DwarFS PGO) | 50–200 ms (bwrap + dbus-proxy) | 40–150 ms (FUSE + shell + bwrap) |
 | **CLI & Pipeline Transparency** | **100% native** (preserves env/pipes/CWD) | Full transparency (`userland-execve`) | Horrible (mangled paths, env scrubbed) | Functional (minor shell overhead) |
-| **Build Reproducibility** | Recipe-based (subject to mirror drift) | Dynamic trace (`quick-sharun.sh`) | Sandboxed manifests (`flatpak-builder`) | **Mathematical bit-for-bit** (`narHash`) |
+| **Build Reproducibility** | Recipe-based; reproducible with a pinned sysroot archive (BLAKE3-enforced), drifts unpinned | Dynamic trace (`quick-sharun.sh`) | Sandboxed manifests (`flatpak-builder`) | **Mathematical bit-for-bit** (`narHash`) |
 
 ---
 
@@ -64,4 +65,4 @@ THE UNBEATABLE IDENTITY:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-See **[REPORT.md](REPORT.md)** for the complete analysis, citations, and open architectural questions.
+See **[REPORT.md](REPORT.md)** for the complete analysis, citations, and open architectural questions, and **[AUDIT.md](AUDIT.md)** for what the 2026-10-18 fact-check changed.

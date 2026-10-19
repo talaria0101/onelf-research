@@ -155,3 +155,118 @@ PRs #21, #26, #28, #29, #30, #31 merged and #22 merged without the
 runtime-hash part; release 0.4.1 published 2026-10-17; the soarpkgs integration is real (the
 word "experimental" applied to it is this repo's paraphrase, not soarpkgs'
 own wording).
+
+---
+
+# Third pass - 2026-10-19
+
+A second independent re-check of every document, run against `QaidVoid/onelf`
+at the same HEAD `7438f5a` (fetched 2026-10-19, unchanged) and fresh clones of
+the competitor repos. Two earlier passes had already corrected citations, so
+this pass concentrated on claims whose logic, scope or evidence was wrong, and on
+onelf features the first edition never read.
+
+**Who checked what.** Five reviewers each took one of workstreams B to F plus
+the REPORT/README statements that depend on it. The author of this pass read
+workstream A, REPORT.md, README.md and the onelf docs and source. The
+reviewers' headline findings that this pass re-ran itself: GitHub release
+assets answer `Range: bytes=-76` and a multi-range request with 501 and an
+explicit range with 206 (curl, 0.4.1 asset, today); `kernel_compat.rs` is
+x86_64-only and switches on below kernel 4.0 or without `statx`;
+`.sha256_sig` in `uruntime/src/main.rs:4637-4646`; `footer_hash` patched in
+after `package_id` (`pack.rs:1593-1594`); FreeCAD #13182 names `swrast_dri`;
+flatpak `flatpak-run.c:2377-2381` (setuid bwrap is supported);
+`bubblewrap.c:3447-3452` (cwd kept). The remaining reviewer findings
+(Flathub sizes, nix-appimage behaviour, E-document issue summaries) are the
+reviewers' own observations and were not re-run here.
+
+## This audit's own earlier claims that were wrong
+
+- "Workstream F was spot-checked and needed no changes." False: F needed 17
+  corrections, 6 of them substantive (listed below).
+- "The `.share` file name uses the first 8 bytes of the package id" stands for
+  the code (`paths.rs:148-153`), but `docs/guide/execution-modes.md` says "whole
+  id". The code is right about what happens; the onelf docs page is stale.
+
+## Corrections that change a conclusion
+
+1. **Rank 1 ("unkeyed manifest") was overstated and its fix mis-specified.**
+   The source states the hash chain is "an integrity check, not authentication"
+   (`footer.rs:195-197`). An in-file signature with an in-file key cannot stop
+   a party who can rewrite the file, because that party can replace the runtime
+   too. Candidate 3's "tamper-proof" claim is withdrawn. `package_id` also
+   excludes the footer (`pack.rs:1528-1594`).
+2. **"Zero cross-application sharing" (Rank 7, matrix row 8) was wrong.**
+   Dependency sets (0.4.0, `docs/guide/sysroot.md`) share one download, mount,
+   server and block cache across packages; cache mode hardlinks identical files
+   across packages. The first edition never read either.
+3. **Rank 6 item 3 ("onelf does not scrub environment leakage") was wrong.** The
+   `onelf-env` constructor hooks `execve`/`posix_spawn` and restores the
+   caller's environment for host programs (0.4.0, commit `32cf581`).
+4. **Candidate 1 (reflink dedup) cannot work as described.** `FICLONERANGE`
+   needs block-aligned offsets; onelf blocks are variable-length zstd output
+   with no alignment. Cache-mode CAS already exists.
+5. **Candidate 2 (range updates):** GitHub assets reject suffix and multi-range
+   requests; onelf already has signed delta updates, so the candidate only
+   removes the `.zsync` file and a `.sig` file remains. "Zsync bitrot" applied
+   to the C tool, not to `zsync-rs`.
+6. **Candidate 6 (micro-init) was presented as new capability.** The onelf docs
+   already ship a Miniflux + PostgreSQL single-file example
+   (`docs/guide/examples/miniflux.md`) using a shell wrapper.
+7. **memfd "win".** It applies to the default entrypoint when it is a static
+   binary, the case the project's docs say to ship directly. The "<1 ms" figures
+   were never measured and are removed. The "6-rung chain" is 4 modes by
+   default for a dynamic app (memfd is static-only, cache is on request).
+8. **Rank 3 (compression) is now measured**: DwarFS is 21.3% smaller on
+   chromium and firefox trees and 4.0% on dbeaver (`measurements/README.md`).
+9. **Anylinux claims:** the 2x-3x and `-S19` DwarFS figures cited a nonexistent
+   line 180 of `FAQ.md` (the file has 172 lines); "sub-300 ms" misread "within +/-300 ms
+   of native"; "thousands of packages" attached to a documentation repo;
+   "glibc 2.40 to 2.6.17" survived in REPORT.md; the 2.6.17 floor is x86_64
+   only. Anylinux's own test (2.0 GiB AppImages vs 6.27 GiB Flatpak) is added
+   as a reported counter to the Flatpak disk claim.
+10. **Flatpak claims:** setuid bwrap is supported; systemd scope fails soft; cwd
+    is kept when visible; the 700 MB to 1.5 GB runtime figure is replaced by
+    Flathub API sizes (0.67 to 1.09 GB installed, 2026-10-19, reviewer-measured);
+    the 15-30 MB delta figure and "millions of installations" had no source.
+11. **nix-appimage claims:** "mathematical bit-for-bit", "completely broken",
+    2-5x bloat and "exit 127" were unmeasured or true of one of the two
+    projects only; several anchors were off (`mkAppImage.nix:48`,
+    `AppRun.sh:240`, `main.c:98`).
+12. **Smaller:** kernel floors are per mode, not whole-runtime; `/dev/shm`
+    appears nowhere in onelf; Landlock network rules need Linux 6.7; `TIOCSTI`
+    is an ioctl, not a syscall; micro-init with `pidfd_open` needs 5.3;
+    `oci-distribution` is superseded by `oci-client`; `ed25519-compact`, not
+    `-dalek`; Rank 9's "glibc 2.31-2.40" has no source; Rank 8 arch list
+    re-verified.
+
+## Doc-versus-code disagreements in upstream onelf (for the author)
+
+- `docs/guide/introduction.md` draws 256 KB blocks; the code default is 64 KiB
+  (`compress.rs:15`; the file-format reference says 64 KiB).
+- `docs/guide/execution-modes.md` names the `.share` record by the whole
+  package id; code uses the first 8 bytes (`paths.rs:148-153`).
+
+## New guard
+
+`scripts/check_anchors.py` fails (exit 1) when a cited `file:line` points to a
+missing file or past the end of the file. Run against the clones used here it
+reports 0 of the 295 anchors in these documents. A planted anchor to line 180 of `FAQ.md`, one to a nonexistent file and one
+to line 99999 of ralismark's `main.c` made it exit 1 with all three reported. It does not read
+the cited line, so a wrong-but-in-range anchor still passes.
+
+## Not covered
+
+- No launch time, memory or RAM-sharing measurement for any format; the only
+  measurement added is size (`measurements/README.md`: one host, one run per
+  cell).
+- Dependency-set mounts, the pinned-GL fetch and the namespace FUSE rung were
+  read, not run; this host's kernel and sandbox were not used to exercise them.
+- No Nix, flatpak or ostree binary was available, so Nix image contents,
+  byte-reproducibility and Flatpak hardlink checkout were not observed.
+- The Ubuntu 24.04 sysctl default, Debian 12 libfuse2 and the NVIDIA mismatch
+  text in a Flatpak tracker remain unverified from primary sources (see E).
+- Candidate 8's OCI spec wording was not re-checked against the spec text.
+- Section 2 matrix cells not named above (for example the nix-appimage
+  integrity row beyond the cited lines) were checked only by the reviewers.
+- Ranking order in REPORT section 4 is editorial; no frequency data exists.

@@ -97,7 +97,7 @@ Serialized as a 65-byte header followed by `num_blocks * BLOCK_SIZE`:
 #### Block Record (56 Bytes Fixed in Format v2/v3) (`crates/onelf-format/src/entry.rs:58-114` `[verified]`):
 - `payload_offset` (`u64`): Relative offset into payload section.
 - `compressed_size` (`u64`): Size of compressed block in bytes.
-- `original_size` (`u64`): Decompressed block size in bytes (defaults to 64 KiB, max 32 MiB).
+- `original_size` (`u64`): Decompressed block size in bytes (default 64 KiB; the packer accepts 4 KiB to 32 MiB, `docs/reference/file-format.md:139`; the reader rejects anything above 256 MiB, `reader.rs:103-106`).
 - `content_hash` (`[u8; 32]`): BLAKE3 hash of this block uncompressed bytes (allows single-block lazy verification without whole-file buffering). In manifest v1, this was absent (24-byte block).
 
 ---
@@ -203,7 +203,7 @@ If the host glibc is newer than the bundled glibc and `req.host_libc` is enabled
 ### Detailed Mode Breakdown:
 
 #### Mode 1: `memfd` (`crates/onelf-rt/src/memfd.rs` & `main.rs:166-226` `[verified]`)
-- **Trigger**: Single static ELF entrypoint (no `DT_NEEDED`), or `[package] memfd = true`, and verified content hash matching BLAKE3.
+- **Trigger**: The default entrypoint is a static ELF (no `DT_NEEDED`) or the package sets `[package] memfd = true`, and its content hash verifies with BLAKE3; other entrypoints start at the next rung (`docs/guide/execution-modes.md`). No package tree exists in this mode (`ONELF_DIR` empty, `[paths]` not applied). The project's own docs say a fully static binary can simply be shipped directly (`docs/guide/introduction.md`), so this rung serves a case where packaging adds little.
 - **Mechanism**: Calls `memfd_create("onelf", 0)` (`memfd.rs:16-17`; the fd name is `onelf`, there is no `MFD_CLOEXEC`, and no `F_ADD_SEALS`/`fchmod` sealing anywhere in the crate - an earlier edition's "seals it" was wrong). Decompresses the entrypoint payload into the memory fd (BLAKE3-verified against the entry's `content_hash` first, `main.rs:183-192`), then executes `/proc/self/fd/<fd>`. If memfd execution fails while not forced, the failure is silent and the ladder continues.
 - **Privilege/Security**: Zero filesystem footprint. No mount or extraction.
 - **Teardown**: Automatically reaped by kernel on process termination.
@@ -224,6 +224,10 @@ If the host glibc is newer than the bundled glibc and `req.host_libc` is enabled
 Concurrent launches of the same package share a single FUSE mount and daemon:
 - Server records state in `.onelf-<name>-<id8>.share` and clients acquire `.onelf-<name>-<id8>.lease`, where `<id8>` is the first 8 bytes of the package id as hex (`paths.rs:148-161`; an earlier edition showed the full package id, and an even earlier one doubled the `onelf-` prefix).
 - Subsequent launches enter the existing mount namespace (`setns(CLONE_NEWNS)`) or run from the host mountpoint, avoiding redundant decompression and memory page duplication.
+- Doc/code disagreement: `docs/guide/execution-modes.md` says the record is named by the package's "whole id", but `shared_dir_name` uses the first 8 bytes (`paths.rs:148-153`). The code is what this report documents; the docs page looks stale.
+
+#### Dependency sets (cross-package sharing; added in 0.4.0, commits `e72b17a`..`21797eb`, 2026-09-06) `[verified: docs/guide/sysroot.md; code not run]`
+A recipe can name a shared set (`[sysroot.sets.<name>]` with URL and BLAKE3, built by `onelf sysroot pack-set`): the closure of named sysroot packages, left out of the bundle. At launch the set is fetched into the shared cache, verified, and by default served by one detached FUSE server whose mountpoint is named by the set's hash, so every package naming the same set shares one download, one mount, one server and one block cache. The mount is in the host mount namespace and needs `fusermount3`; without it the set is copied out (`ONELF_SET_MODE=extract` forces that). Sets are obtained before an execution mode is chosen for that reason. Set libraries appear as symlinks in the bundle's library directory; nothing goes on `LD_LIBRARY_PATH`. The first edition of this report did not mention sets and so claimed there was no cross-package sharing.
 
 #### Mode 4: Ephemeral tmpfs (`crates/onelf-rt/src/ephemeral.rs:57-130` `[verified]`)
 - **Trigger**: FUSE `/dev/fuse` unavailable, but user namespaces permitted.
@@ -301,13 +305,14 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 ### 6.1 Compression & Filesystem Engine
 - Custom zstd block-compressed archive format (not SquashFS, not EROFS, not DwarFS).
-- Block size defaults to 64 KiB (`6b08951 perf: default to 64 KiB payload blocks` `[verified]`).
+- Block size defaults to 64 KiB (`6b08951 perf: default to 64 KiB payload blocks` `[verified]`; `compress.rs:15`). The recipe reference reports, for Blender, 64 KiB starting 17 percent faster from a cold cache than 256 KiB for a package 5 percent larger, and 1 MiB 40 percent slower than 256 KiB (`docs/reference/recipe-schema.md:100-104`) [author's figures, not reproduced]. `docs/guide/introduction.md` still draws 256 KB blocks; the code default is 64 KiB.
+- Identical files are stored once per package (`pack.rs:1183`; `docs/reference/file-format.md`); there is no cross-file block dedup.
 - Optional zstd dictionary trained on files (`zstd::dict::from_continuous`).
 - Uncompressed stored mode supported via `flags & STORED`.
 
 ### 6.2 Startup Flow and Latency Profile
-1. **ELF Header Parsing & Footer Discovery**: `lseek` to `FileSize - 76`. Read footer. Validate magic bytes `ONELF\0\x01\x00` and `FLENONE\0`. (Sub-millisecond).
-2. **Manifest Decompression**: Read `manifest_compressed` bytes at `manifest_offset`. Decompress with zstd. Verify the XXH32 manifest checksum (`loader.rs:61-67`). The `package_id` BLAKE3 is *not* recomputed at startup (it only names on-disk paths: the cache tree, the lock file, and the private launch/mountpoint names); `prefix_hash`/`footer_hash` are checked only by `onelf verify` (`crates/onelf/src/verify.rs:54-75`), while the Ed25519 signature check runs in `onelf verify` and in self-update, which references neither structure hash.
+1. **ELF Header Parsing & Footer Discovery**: `lseek` to `FileSize - 76`. Read footer. Validate magic bytes `ONELF\0\x01\x00` and `FLENONE\0`. [latency unmeasured]
+2. **Manifest Decompression**: Read `manifest_compressed` bytes at `manifest_offset`. Decompress with zstd. Verify the XXH32 manifest checksum (`loader.rs:61-67`). No timing exists for any of this phase. The `package_id` BLAKE3 is *not* recomputed at startup (it only names on-disk paths: the cache tree, the lock file, and the private launch/mountpoint names); `prefix_hash`/`footer_hash` are checked only by `onelf verify` (`crates/onelf/src/verify.rs:54-75`), while the Ed25519 signature check runs in `onelf verify` and in self-update, which references neither structure hash.
 3. **Execution Mode Resolution**: Check `memfd` -> Check userns -> Check FUSE -> Check tmpfs.
 4. **FUSE Mount**: If Mode 2, `unshare(CLONE_NEWUSER | CLONE_NEWNS)`, mount FUSE, fork worker daemon.
 5. **Prefetch Optimization**: If the package contains a startup profile (stored as `.onelf/prefetch`, recorded at pack time from `ONELF_PROFILE` via `pack.rs:119-122`; an earlier edition called it `.onelf/startup.profile`, which exists nowhere), its blocks are decompressed ahead of demand by the FUSE server (`fuse/fs.rs:405+`; commit `822a654 feat: prefetch the blocks a startup profile lists` `[verified]`).
@@ -335,8 +340,8 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
    If host glibc has incompatible or newer symbol versions than bundled glibc, the entire glibc family must be swapped or remain bundled. If an application requires a host library that needs a newer glibc than bundled, but host glibc cannot be safely loaded, `Choice::Incomparable` forces bundled fallback, which can fail at runtime.
 3. **No SUID Binary Support in userns**:
    FUSE in user namespaces explicitly rejects SUID binaries (`MS_NOSUID`). Packages needing SUID must fall back to `fusermount3` or fail.
-4. **Kernel Version Floor**:
-   Requires Linux 3.17+ for `memfd_create`, 3.8+ for unprivileged user namespaces. Cannot run on ancient 2.6.x kernels (unlike `Anylinux-AppImages` with `kernel_compat.rs`).
+4. **Kernel Version Floor** [inferred; the project documents none]:
+   The memfd mode needs Linux 3.17+ and the namespace modes 3.8+ (FUSE in a user namespace 4.18+). The runtime-directory mode needs neither, so these are per-mode floors. Whether the runtime runs on 2.6.x kernels was not tested. Anylinux's emulation layer (`kernel_compat.rs`) does target them, on x86_64 only.
 
 ---
 
@@ -344,7 +349,7 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 - **v0.1.0 - v0.2.0 (Foundational Phase)**: Custom zstd block format with footer, `memfd` and FUSE execution modes from the earliest releases. No SquashFS appears anywhere in the repository's history (an earlier edition of this section claimed squashfs experiments; `git grep` over every tree and every commit message finds zero occurrences). `onelf-preload` (a Rust `cdylib` exposing a C ABI that intercepted `execve` under `LD_PRELOAD`) enters in the 0.2.0 era (added in `6977832`, 2026-04-16).
 - **v0.2.0 - v0.3.0 (Architecture Stabilization)**: Abandoned `onelf-preload` because `LD_PRELOAD` failed with statically linked binaries, broke with SUID, and leaked into subprocesses `[inferred]` (no commit or doc states the full rationale; docs only partly support it - `docs/guide/recipe.md:264` on the interpreter being wiped by a sandboxed re-exec, `docs/reference/env-vars.md:11` on setuid ignoring `ONELF_*`). Replaced with in-tree no_std Rust bootstrap payloads and binary ELF patching.
-- **v0.3.0 - v0.4.0 (Hardening & Enterprise Polish)**: Format v2/v3 transition; Per-block 64 KiB BLAKE3 content hashing for lazy single-block FUSE verification; Strict HTTPS Ed25519 signed zsync updates with revision anti-rollback; Multi-process FUSE mount sharing (`crates/onelf-rt/src/fuse/share.rs`); Profile-guided startup block prefetching.
+- **v0.3.0 - v0.4.0 (Hardening & Enterprise Polish)** (0.4.0 also added shared dependency sets, a fetchable pinned GL build and `onelf-env` exec hooks that restore the caller's environment for host programs): Format v2/v3 transition; Per-block 64 KiB BLAKE3 content hashing for lazy single-block FUSE verification; Strict HTTPS Ed25519 signed zsync updates with revision anti-rollback; Multi-process FUSE mount sharing (`crates/onelf-rt/src/fuse/share.rs`); Profile-guided startup block prefetching.
 - **v0.4.1 (Current)**: i686 payload fixes (`0d655cf` lets bootstrap asserts link without a GOT, `7438f5a` allows the i686 GOT header and forbids relocations instead); a test hardening reclamation of a shared FUSE mount after a killed server (`b55fbd5`). (i686 support itself shipped earlier, in 0.3.0/0.3.1 via PRs #29/#30; the 64 KiB payload block-size default landed in 0.4.0 via `6b08951`; multi-process FUSE mount sharing shipped in 0.4.0 via `900a7a9`.)
 
 ---
@@ -353,8 +358,8 @@ Parsed with `serde(deny_unknown_fields, rename_all = "kebab-case")`.
 
 | Claim in Docs / Site | Code Reality | Verdict |
 |---|---|---|
-| "Zero host dependencies" | True for static musl runtime prefix; dynamic apps still depend on kernel user namespaces or SUID `fusermount3` or `/dev/shm` tmpfs. | **Verified with Nuance** |
+| "Zero host dependencies" | True for the static musl runtime prefix; dynamic apps still depend on kernel user namespaces or SUID `fusermount3`, or on a writable exec-capable directory for the last rung. (`/dev/shm` appeared in the first edition; nothing in `crates/` or `docs/` uses it.) | **Verified with Nuance** |
 | "No LD_LIBRARY_PATH pollution" | Verified in PR #31 (`1e5385e`). Linker is invoked with `--library-path`; host-only paths set only when bootstrap requires it. | **Verified** |
 | "In-memory execution without disk extraction" | Only available for static single binaries or packages marked `memfd = true`. Standard multi-file packages use FUSE or tmpfs. | **Verified** |
-| "Automatic host GPU acceleration" | Implemented via symbol version comparison (`verdef.rs`) and ephemeral link farm. Does not bundle full Mesa (unlike Anylinux). Relies on host driver presence. | **Verified** |
-| "Self-updating single binary" | Uses `zsync-rs` with Ed25519 signature checks. Verified in `update.rs`. Requires remote `.zsync` and `.sig` files. | **Verified** |
+| "Automatic host GPU acceleration" | Implemented via symbol version comparison (`verdef.rs`) and ephemeral link farm. Bundles no Mesa by default; a package that pins a GL build fetches it (BLAKE3-verified) when the host has no GL (`launch.rs:410-421`). Pinless packages on hosts with no GL still fail. | **Verified, corrected** |
+| "Self-updating single binary" | Uses `zsync-rs` with Ed25519 signature checks. Verified in `update.rs`. Requires remote `.zsync` and `.zsync.sig` files, an embedded public key, and `--update-revision` for rollback protection (`docs/guide/self-update.md`). | **Verified** |

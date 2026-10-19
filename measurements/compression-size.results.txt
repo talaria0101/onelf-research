@@ -1,0 +1,21 @@
+== chromium raw_bytes=415421744
+onelf level19 64KiB rc=0 bytes=164845553 secs=67.955994814
+onelf level22 rc=0 bytes=164834290
+onelf level19+dict rc=0 bytes=161989820
+mkdwarfs zstd22 -S26 -B2 rc=0 bytes=129797179 secs=40.732211846
+mkdwarfs zstd19 -S26 -B2 rc=0 bytes=133642461
+tar|zstd -19 bytes=134199070
+== firefox raw_bytes=311600456
+onelf level19 64KiB rc=0 bytes=106495176 secs=65.594900880
+onelf level22 rc=0 bytes=106486519
+onelf level19+dict rc=0 bytes=104099159
+mkdwarfs zstd22 -S26 -B2 rc=0 bytes=83807831 secs=50.523130602
+mkdwarfs zstd19 -S26 -B2 rc=0 bytes=85196451
+tar|zstd -19 bytes=85382003
+== dbeaver raw_bytes=100970078
+onelf level19 64KiB rc=0 bytes=91067054 secs=2.799380323
+onelf level22 rc=0 bytes=91066743
+onelf level19+dict rc=0 bytes=90483061
+mkdwarfs zstd22 -S26 -B2 rc=0 bytes=87387760 secs=13.348097584
+mkdwarfs zstd19 -S26 -B2 rc=0 bytes=87552354
+tar|zstd -19 bytes=87793286

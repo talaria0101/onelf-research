@@ -1,0 +1,25 @@
+pack blocks rc=0
+pack stipple rc=0
+pack stipple-stored rc=0
+-rwxr-xr-x 1 0 0 106762571 Oct 28 02:11 x.blocks
+-rwxr-xr-x 1 0 0  85100918 Oct 28 02:12 x.stipple
+-rwxr-xr-x 1 0 0 309639542 Oct 28 02:12 x.stored
+extract blocks rep=1 rc=0 secs=.939151966 files=31
+extract stipple rep=1 rc=0 secs=1.089184159 files=31
+extract stored rep=1 rc=0 secs=1.095078135 files=31
+extract blocks rep=2 rc=0 secs=.789220712 files=31
+extract stipple rep=2 rc=0 secs=1.006473652 files=31
+extract stored rep=2 rc=0 secs=1.058847068 files=31
+extract blocks rep=3 rc=0 secs=.785596305 files=31
+extract stipple rep=3 rc=0 secs=1.033467844 files=31
+extract stored rep=3 rc=0 secs=1.070995631 files=31
+verify blocks rep=1 rc=0 secs=.779775708
+verify stipple rep=1 rc=0 secs=1.113545103
+verify stored rep=1 rc=0 secs=1.232088026
+verify blocks rep=2 rc=0 secs=.788417533
+verify stipple rep=2 rc=0 secs=1.145217673
+verify stored rep=2 rc=0 secs=1.147417651
+verify blocks rep=3 rc=0 secs=.807315660
+verify stipple rep=3 rc=0 secs=1.125003236
+verify stored rep=3 rc=0 secs=1.194051491
+ 02:12:46 up 30 min,  0 users,  load average: 3.76, 8.46, 9.10

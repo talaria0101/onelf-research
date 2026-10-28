@@ -10,7 +10,7 @@
 
 ### 1.1 Tooling Landscape
 Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylinux-AppImages` initiative relies on its own toolchain (it still shells out to `patchelf`, `ldd`, `xvfb-run` and the upstream `mkdwarfs`):
-- **`quick-sharun.sh`** (`useful-tools/quick-sharun.sh` [verified]): A monolithic 170 KB POSIX shell orchestration script (replacing deprecated `uruntime2appimage.sh`) that manages dependency tracing, binary patching, and bundle layout assembly.
+- **`quick-sharun.sh`** (`useful-tools/quick-sharun.sh` [verified]): A monolithic 176 KB POSIX shell orchestration script (replacing deprecated `uruntime2appimage.sh`) that manages dependency tracing, binary patching, and bundle layout assembly.
 - **`Anylinux-sharun`** (`pkgforge-dev/Anylinux-sharun` [verified]): A specialized Rust fork of `VHSgunzo/sharun`. Multiplexes binaries in `$APPDIR/bin/*` via hard links to a single `sharun` binary.
 - **`uruntime`** (`VHSgunzo/uruntime` [verified]): A static Rust runtime replacing AppImage `type2-runtime`. Supports DwarFS and SquashFS images. The pinned `appimagetool` 0.5.3 downloads release `v0.8.1` of the `uruntime-appimage-dwarfs-lite` variant and checks its SHA-256 (`appimagetool/src/pinned.rs`). Release assets are static musl builds (`uruntime/docs/BUILDING.md:7`); the `x86_64` `uruntime-appimage-dwarfs-lite` asset of `v0.8.1` is 1,507,016 bytes and the full `uruntime-appimage-x86_64` is 4,274,056 bytes (GitHub releases API, fetched on the date of this edit; the `x86_64` runtime only).
 - **`pkgforge-dev/appimagetool`** (`pkgforge-dev/appimagetool` [verified]): A pure Rust tool that patches the runtime's ELF sections (`.upd_info` and `.envs`), invokes `mkdwarfs`, and generates `.zsync` files.
@@ -25,11 +25,11 @@ Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylin
 ### 2.1 Complete Glibc Bundling
 - Bundles the current Arch glibc and dynamic linker (`ld-linux-x86-64.so.2`) into `$APPDIR/lib` [corrected: an earlier edition claimed "glibc 2.40 to 2.44", which no file in the repo states; the bundled version is whatever the Arch build image provides, and Arch glibc is built with `--enable-kernel=4.4` per FAQ.md].
 - Bypasses host glibc completely: passes `--library-path` directly to the bundled dynamic linker.
-- Maps dynamically linked 64-bit application binaries via **`userland-execve`**, so `/proc/self/exe` keeps pointing at `bin/<app>` (the `sharun` hard link) rather than `ld-linux.so` (`Anylinux-sharun/src/main.rs:482`; upstream `userland-execve-rust` README). Static binaries, 32-bit binaries and Bun/patched binaries take other paths (`main.rs:438-479`): static ones use a plain `exec`, 32-bit ones a real `exec` of the bundled interpreter, and patched ones a copy of the interpreter in `/tmp`.
+- Maps dynamically linked 64-bit application binaries via **`userland-execve`**, so `/proc/self/exe` keeps pointing at `bin/<app>` (the `sharun` hard link) rather than `ld-linux.so` (`Anylinux-sharun/src/main.rs:482`; upstream `userland-execve-rust` README). Static binaries, 32-bit binaries and Bun/patched binaries take other paths (`main.rs:437-478`): static ones use a plain `exec`, 32-bit ones a real `exec` of the bundled interpreter, and patched ones a copy of the interpreter in `/tmp`.
 
 ### 2.2 Host Isolation & Preload Defense
 - Patches the bundled dynamic linker binary in-place:
-  `sed -i -e 's|/etc|/KEK|g' "$APPDIR/lib/ld-linux-x86-64.so.2"` [verified; the script applies it to every staged `ld-linux*.so*`/`ld-musl*.so*` containing the string, at `quick-sharun.sh:4899-4905`].
+  `sed -i -e 's|/etc|/KEK|g' "$APPDIR/lib/ld-linux-x86-64.so.2"` [verified; the script applies it to every staged `ld-linux*.so*`/`ld-musl*.so*` containing the string, at `quick-sharun.sh:5044-5050`].
 - This prevents the dynamic linker from reading host `/etc/ld.so.preload` and `/etc/ld.so.cache`. Upstream's stated reason is that reading `/etc/ld.so.cache` "would segfault instantly on some systems" (`HALL-OF-FAME.md:105`); an earlier commit (`2501024`) patched only `/etc/ld.so.preload`. No upstream file ranks this as the most common crash cause, and none was measured here.
 
 ### 2.3 Old Kernel Compatibility Layer (Down to Linux 2.6.17)
@@ -50,13 +50,13 @@ Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylin
 ### 3.2 Desktop & Environment Sanitization
 - **`gtk-fix-nonsense.so`:** Forces the Wayland window class/app-id to the value of `$GTK_WINDOW_CLASS` (fixing desktop integration) and remaps `/usr` prefixes so bundled typelibs are found instead of host ones [verified; `Anylinux-sharun/lib/gtk-fix-nonsense.c`].
 - **`glycin-fix.so`:** Disables the bwrap sandbox of GNOME's glycin image loader, which does not work inside an AppImage [verified; `Anylinux-sharun/README.md`].
-- **`anylinux.so`:** Interposes `execve`, `execv`, `execvp`, `execvpe`, `posix_spawn` and `posix_spawnp` (`anylinux.c:506-552`) to unset a list of 61 loader and bundled-path variables (`ALSA_CONFIG_PATH`, `LD_PRELOAD`, `QT_PLUGIN_PATH`, ...) before spawning a process whose path lies outside `$APPDIR`, so host applications do not inherit the bundle's settings [verified].
+- **`anylinux.so`:** Interposes `execve`, `execv`, `execvp`, `execvpe`, `posix_spawn` and `posix_spawnp` (`anylinux.c:511-557`) to unset a list of 61 loader and bundled-path variables (`ALSA_CONFIG_PATH`, `LD_PRELOAD`, `QT_PLUGIN_PATH`, ...) before spawning a process whose path lies outside `$APPDIR`, so host applications do not inherit the bundle's settings [verified].
 
 ---
 
 ## 4. Runtime, Compression, and Startup Mechanics
 
-- **DwarFS Filesystem:** Employs DwarFS with Zstandard compression, default `-C zstd:level=22 -S26 -B2` (`appimagetool/src/config.rs:175`, tag `0.5.3` = main `a9f5ebf`; the string also appears in a comment at `src/dwarfs.rs:104`). `zstd:level=5 -S19` (`src/dwarfs.rs:149-151`) is used only for the throwaway OPTIMIZE_LAUNCH profiling image. `-S26` means 2^26-byte (64 MiB) blocks and `-B2` means a scan of the 2 most recent blocks for duplicate segments (mkdwarfs manual); whole-file deduplication is separate and on by default (`--file-hash`). So segment deduplication is bounded by that lookback window, not global. Upstream states that DwarFS is "a lot faster than SquashFS while being smaller at the same time" (`FAQ.md:144`) and "many times faster than SquashFS" (`HOW-TO-MAKE-THESE.md:158`). No percentage appears in the text of the tooling repos (`FAQ.md:146` embeds a screenshot that was not inspected), and nothing was measured here [reported].
+- **DwarFS Filesystem:** Employs DwarFS with Zstandard compression, default `-C zstd:level=22 -S26 -B2` (`appimagetool/src/config.rs:175`, tag `0.5.3` = main `a9f5ebf`; the string also appears in a comment at `src/dwarfs.rs:104`). `zstd:level=5 -S19` (`src/dwarfs.rs:149-151`) is used only for the throwaway OPTIMIZE_LAUNCH profiling image. `-S26` means 2^26-byte (64 MiB) blocks and `-B2` means a scan of the 2 most recent blocks for duplicate segments (mkdwarfs manual); whole-file deduplication is separate and on by default (`--file-hash`). So segment deduplication is bounded by that lookback window, not global. Upstream states that DwarFS is "a lot faster than SquashFS while being smaller at the same time" (`FAQ.md:152`) and "many times faster than SquashFS" (`HOW-TO-MAKE-THESE.md:158`). No percentage appears in the text of the tooling repos (`FAQ.md:154` embeds a screenshot that was not inspected), and nothing was measured here [reported].
 - **Profile-Guided Launch Optimization (`OPTIMIZE_LAUNCH=1`):** Analyzes block access patterns during startup and groups blocks by hotness (`--categorize=hotness` is passed by `appimagetool/src/dwarfs.rs:99`; the feature is documented at `HOW-TO-MAKE-THESE.md:158`); "In many cases, launch times are near-identical to those of native applications (+/-300 ms on a system with a 2016 CPU)" is their reported figure (`HOW-TO-MAKE-THESE.md:158`), not measured here.
 - **3-Tier Execution Fallback:**
   1. Direct FUSE mount via embedded `squashfuse` / `dwarfs` helpers.
@@ -69,9 +69,9 @@ Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylin
 ## 5. Maintainer Pain Points
 
 1. **Host dynamic-linker reads of `/etc`:** the `ld.so.cache` segfault (and, originally, `ld.so.preload`) is avoided by `/etc` -> `/KEK` patching (see 2.2).
-2. **Fontconfig binary cache incompatibility:** Mismatched cache formats crash applications; resolved by re-pointing `XDG_CACHE_HOME` to an isolated `AppImage-Cache` directory (`quick-sharun.sh:4018-4030`; `HALL-OF-FAME.md:91-97`; their issue #657, "Strange behavior of fontconfig", closed).
-3. **Ubuntu 24.04 Unprivileged Namespace Restrictions:** Mitigated by the opt-in `fix-namespaces.hook` (added with `ADD_HOOKS=fix-namespaces.hook`), which on AppArmor hosts asks the user for elevation (`pkexec`, `lxqt-sudo` or `run0`, via `run_gui_sudo`, `quick-sharun.sh:4062-4078`) and writes a persistent `/etc/sysctl.d/20-fix-namespaces.conf` setting `kernel.apparmor_restrict_unprivileged_userns = 0`; on secureblue it runs `ujust set-unconfined-userns on`; elsewhere it only shows a message (`quick-sharun.sh:2268-2345`).
-4. **Maintenance Overhead:** The 5,199-line `quick-sharun.sh` shell script contains extensive heuristic workarounds for edge cases, requiring constant maintenance.
+2. **Fontconfig binary cache incompatibility:** Mismatched cache formats crash applications; resolved by re-pointing `XDG_CACHE_HOME` to an isolated `AppImage-Cache` directory (`quick-sharun.sh:4150-4162`; `HALL-OF-FAME.md:91-97`; their issue #657, "Strange behavior of fontconfig", closed).
+3. **Ubuntu 24.04 Unprivileged Namespace Restrictions:** Mitigated by the opt-in `fix-namespaces.hook` (added with `ADD_HOOKS=fix-namespaces.hook`), which on AppArmor hosts asks the user for elevation (`pkexec`, `lxqt-sudo` or `run0`, via `run_gui_sudo`, `quick-sharun.sh:4194-4210`) and writes a persistent `/etc/sysctl.d/20-fix-namespaces.conf` setting `kernel.apparmor_restrict_unprivileged_userns = 0`; on secureblue it runs `ujust set-unconfined-userns on`; elsewhere it only shows a message (`quick-sharun.sh:2358-2435`).
+4. **Maintenance Overhead:** The 5,358-line `quick-sharun.sh` shell script contains extensive heuristic workarounds for edge cases, requiring constant maintenance.
 
 ---
 
@@ -79,7 +79,7 @@ Contrary to legacy AppImage tooling (`appimagetool`, `linuxdeploy`), the `Anylin
 
 | Feature | `onelf` | `Anylinux-AppImages` |
 |---|---|---|
-| **Build Architecture** | Declarative `onelf.toml` + pure Rust CLI | Imperative 170 KB POSIX shell script (`quick-sharun.sh`) |
+| **Build Architecture** | Declarative `onelf.toml` + pure Rust CLI | Imperative 176 KB POSIX shell script (`quick-sharun.sh`) |
 | **Kernel Floor** | Linux 3.17+ (`memfd`) / 3.8+ (`userns`) [inferred from syscall usage] | Linux 2.6.17+ on `x86_64` only (via ptrace/seccomp syscall emulation; automatic only on kernels older than 4.0) |
 | **Compression** | 64 KiB zstd blocks | DwarFS (zstd:level=22, -S26 -B2 default, whole-file dedup plus segment dedup over a 2-block lookback) |
 | **In-Memory Exec** | Native `memfd_create` for static single binaries only (latency not measured) | Not supported for the payload (requires mount or extract); `uruntime` itself runs its embedded helper tools through `memfd` |

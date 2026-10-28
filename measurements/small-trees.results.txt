@@ -1,0 +1,21 @@
+== smoke files=3 raw_bytes=372989
+onelf blocks L19 64K rc=0 secs=.110600019 bytes=1287863
+onelf stipple L19 default32M rc=0 secs=.293761601 bytes=1299500
+onelf stipple L19 1M rc=0 secs=.255312036 bytes=1299500
+mkdwarfs zstd22 -S26 -B2 rc=0 secs=.057168123 bytes=145796
+== zoneinfo files=605 raw_bytes=569266
+onelf blocks L19 64K rc=0 secs=.058954622 bytes=1383968
+onelf stipple L19 default32M rc=0 secs=.373133510 bytes=1283605
+onelf stipple L19 1M rc=0 secs=.375953448 bytes=1283605
+mkdwarfs zstd22 -S26 -B2 rc=0 secs=.174659487 bytes=109342
+== python3.14 files=4320 raw_bytes=90898826
+onelf blocks L19 64K rc=0 secs=3.062841079 bytes=26604643
+onelf stipple L19 default32M rc=0 secs=19.439588557 bytes=16729885
+onelf stipple L19 1M rc=0 secs=7.630750898 bytes=18659101
+mkdwarfs zstd22 -S26 -B2 rc=0 secs=19.080155138 bytes=14863073
+== icons files=52651 raw_bytes=141845240
+onelf blocks L19 64K rc=0 secs=11.364728734 bytes=49191557
+onelf stipple L19 default32M rc=0 secs=25.182832559 bytes=23474407
+onelf stipple L19 1M rc=0 secs=14.788694891 bytes=25596135
+mkdwarfs zstd22 -S26 -B2 rc=0 secs=44.381970020 bytes=20177318
+ 02:19:27 up 37 min,  0 users,  load average: 5.66, 6.88, 8.20

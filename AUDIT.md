@@ -1,3 +1,108 @@
+# Update pass - 2026-10-28
+
+Requested because `QaidVoid/onelf` changed after the 2026-10-19 passes and the
+size comparison in `measurements/` no longer described the product. This pass
+re-read what changed, re-measured, and corrected the documents in place. The
+2026-10-18 and 2026-10-19 sections below are left as the record of those
+passes: their anchors and "HEAD `7438f5a`" statements describe that revision.
+
+- **Revisions.** onelf `7438f5a` (2026-10-17) to HEAD `cd99efb` (2026-10-26),
+  351 commits. Latest release is 0.4.2 (tag `e1a56af`, 2026-10-21); four
+  commits after it are unreleased (`1db8d66`, `1f12826`, `08a39bd`,
+  `cd99efb`), and release PR #40 (0.4.3) is open. stipplefs is at v0.1.0
+  (`3a8a476`, 2026-10-21). Source files and docs were read for every area the
+  diff touched (63 files, +6,401 -1,383 lines): the stipple payload, the new
+  `update/` module, `resolve.rs`, `main.rs`, `loader.rs`, `cache.rs`, `launch.rs`,
+  integration, footer flags, recipe and CLI docs.
+- **What ran.** The 0.4.2 release binary (BLAKE3 matches the published
+  `.b3sum`) on one host: packs, `info`, `verify`, `--onelf-extract`,
+  `--onelf-doctor`, `--prefer-cache`, `--update-unsigned` (rejected by 0.4.2),
+  rundir and cache modes. GitHub's range behaviour re-observed with curl.
+  `measurements/README.md` has the sizes and timings. **What did not run:** any
+  HEAD code (no CI artifact exists and building was out of bounds), the
+  delta-update path, the GLX/DRI farming on real Mesa, FUSE and user-namespace
+  modes (this host has neither), cold-cache timings.
+
+## Claims the new evidence overturns
+
+1. **"DwarFS is 21.3% smaller than onelf" (Rank 3, matrix, README).** True for
+   the default blocks payload (+27.0% on chromium and firefox, +4.2% on dbeaver
+   in this run). Not true for `--payload stipple`: +0.7%, +1.3%, +1.5%. On trees
+   of many small files DwarFS stays ahead of stipple (icons +10.7%, python3.14
+   +4.9%, runtime prefix excluded). Rank 3 is rewritten.
+2. **"onelf has no cross-file block dedup."** True for blocks, false for stipple
+   (0.4.2). The stored-image comparison suggests dedup contributes about 1% on
+   the three app trees and the gain comes from the large compression window.
+3. **"onelf updates through `zsync-rs` with a `.zsync` and a `.zsync.sig`."** True
+   for release 0.4.2; at HEAD the update URL names the binary, the signature is
+   `<url>.sig`, and an explicit unsigned opt-in exists. Candidate 2 and
+   Feature 1 (the first edition's proposal to drop the control file) are built at
+   HEAD, unreleased. Matrix row 5, the reality-check table, F section 2.1 and
+   workstream A section 4 are rewritten.
+4. **"Self-update without a key is refused."** At HEAD a package packed with
+   `--update-unsigned` updates with no signature check; a URL with neither key
+   nor opt-in is still disabled. Rank 1 now says so.
+5. **Runtime prefix "1.1 MB slim / 2.4 MB with updater".** Measured on 0.4.2:
+   1,134,912 and 2,503,040 bytes. HEAD docs say 1152 KB and 2484 KB, unmeasured.
+6. **"342 commits, release 0.4.1".** Now 351 commits, release 0.4.2.
+7. **Execution ladder.** `--prefer-cache` (0.4.2) moves the cache to the front
+   and skips memfd; added to the ladder text, with the rt `main.rs` anchors
+   re-derived (cited `main.rs` ranges moved by 4 to 56 lines; the cache rung is now a function, `exec_cache`).
+8. **`quick-sharun.sh` "170 KB / 5,199 lines".** Now 176,435 bytes / 5,358 lines
+   (Anylinux-AppImages `31987cf`, 2026-10-27). Its cited line numbers moved by
+   up to 145 lines and were re-pointed.
+
+## What held
+
+Rank 1's reasoning (an in-file signature does not authenticate; `footer.rs`
+comment still says so, now at `footer.rs:208-210`), the GitHub range behaviour
+(suffix and multi-range answer 501, explicit ranges 206, re-observed today),
+the `package_id` excluding footer flags (a `--prefer-cache` package and a plain
+one from the same tree had the same package id), Issue #36 still open, the
+sandbox non-goal, the reproducibility statements. Two builds of the same input were byte-identical for each
+payload on dbeaver and firefox (stipple packing is multi-threaded; one host, one
+thread count), and three builds of the 0.4 MB tree.
+
+## Anchor work
+
+- 218 distinct anchors were cited at the start; 152 anchor occurrences matched
+  a onelf file by path suffix at `7438f5a` (some of those were other
+  repositories' files with the same basename, see the mistake below). Re-derived
+  against `cd99efb`: 64 unchanged, 55 moved, 17 ambiguous
+  by basename, 10 changed (the lines no longer exist verbatim), 6 pointed at
+  files that no longer exist (`crates/onelf-rt/src/update.rs`, replaced by the
+  `update/` module). Moved ones were rewritten, changed and gone ones re-read
+  and re-pointed by hand. The new `scripts/remap_anchors.py` does this mapping.
+- **A mistake in this pass, caught and reverted.** A first automatic rewrite
+  matched bare basenames against onelf and moved four anchors that belong to other
+  repositories: three `ralismark` `README.md:44` citations and one Anylinux-sharun
+  `main.rs:438-479`. Those were restored. The remapper now rewrites only
+  path-qualified anchors unless `--apply-bare` is given, and a run over the
+  pre-update documents with `--apply` left the `README.md:44` ralismark
+  citation untouched while rewriting 13 qualified anchors.
+- Competitor repositories that changed since 2026-10-19: Anylinux-AppImages
+  (25 commits), Anylinux-sharun (6), cross-libc-dlopen (2), appimagetool (1,
+  CI files only), flatpak (4, tests and two small context/transaction edits).
+  uruntime, ralismark/nix-appimage and pkgforge/nix-appimage did not change.
+  Anchors into them were re-pointed where the cited lines moved verbatim
+  (`quick-sharun.sh`, `FAQ.md`, `anylinux.c`, sharun `main.rs`). The statements
+  around those anchors were not re-read against the new code, so a changed
+  behaviour in those repos would not have been caught.
+- `scripts/check_anchors.py` against fresh clones of all of the above: 361 anchors
+  checked, 6 reported. All six are old and out of scope for this pass:
+  `bubblewrap.c` (three, a Flatpak subproject not cloned), `nix-bootstrap.sh` and
+  `default.nix:134` (nix-bundle, not cloned) and `runtime.c` (AppImage
+  type2-runtime, not cloned).
+
+## Still unverified after this pass
+
+HEAD runtime behaviour of everything in `update/`, delta sizes for any package,
+stipple launch time under FUSE, and whether the stipple per-image overhead seen
+on the 0.4 MB tree is fixed or shrinks. Anything cited from Flatpak, nix-bundle
+and type2-runtime beyond line-number existence was not re-checked.
+
+---
+
 # Fact-Check Audit - 2026-10-18
 
 A verification pass over every workstream in this repository against the

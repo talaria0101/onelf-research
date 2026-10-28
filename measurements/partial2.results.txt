@@ -1,0 +1,22 @@
+pack stipple bs=1M rc=0 secs=30.186654888 bytes=91847030
+pack stipple bs=4M rc=0 secs=19.868166370 bytes=88369526
+pack stipple bs=8M rc=0 secs=22.530950576 bytes=86997366
+small9 stipple bs=1M rep=1 rc=0 secs=.024234324
+small9 stipple bs=4M rep=1 rc=0 secs=.044553112
+small9 stipple bs=8M rep=1 rc=0 secs=.054580104
+small9 stipple bs=1M rep=2 rc=0 secs=.019866477
+small9 stipple bs=4M rep=2 rc=0 secs=.037452146
+small9 stipple bs=8M rep=2 rc=0 secs=.054162595
+small9 stipple bs=1M rep=3 rc=0 secs=.020670947
+small9 stipple bs=4M rep=3 rc=0 secs=.037937636
+small9 stipple bs=8M rep=3 rc=0 secs=.054558635
+small9 stipple bs=1M rep=4 rc=0 secs=.020244147
+small9 stipple bs=4M rep=4 rc=0 secs=.040336494
+small9 stipple bs=8M rep=4 rc=0 secs=.058834502
+small9 stipple bs=1M rep=5 rc=0 secs=.020361937
+small9 stipple bs=4M rep=5 rc=0 secs=.037976876
+small9 stipple bs=8M rep=5 rc=0 secs=.055042684
+full stipple bs=1M rc=0 secs=.897285852
+full stipple bs=4M rc=0 secs=1.021100503
+full stipple bs=8M rc=0 secs=.950628718
+ 02:14:36 up 32 min,  0 users,  load average: 9.76, 8.92, 9.17

@@ -1,0 +1,4 @@
+dbeaver blocks rc=0,0 bytes=91579781 identical
+dbeaver stipple rc=0,0 bytes=89180663 identical
+firefox blocks rc=0,0 bytes=106762571 identical
+firefox stipple rc=0,0 bytes=85100918 identical

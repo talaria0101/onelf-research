@@ -1,0 +1,30 @@
+== chromium raw_bytes=415421744
+onelf blocks L19 64K rc=0 secs=81.352753531 bytes=164866025
+onelf blocks L19 1M rc=0 secs=58.204615412 bytes=146758658
+onelf stipple L19 default32M rc=0 secs=35.675798224 bytes=130703674
+onelf stipple L19 1M rc=0 secs=41.438208295 bytes=141971770
+onelf stipple L22 default32M rc=0 secs=73.753172913 bytes=130167098
+onelf stipple store rc=0 secs=6.830323623 bytes=412975418
+mkdwarfs zstd22 -S26 -B2 rc=0 secs=48.598717365 bytes=129797174
+mkdwarfs zstd19 -S26 -B2 rc=0 secs=38.695817080 bytes=133642463
+tar|zstd -19 bytes=134199070
+== firefox raw_bytes=311841554
+onelf blocks L19 64K rc=0 secs=61.475781486 bytes=106762571
+onelf blocks L19 1M rc=0 secs=50.442701989 bytes=93478087
+onelf stipple L19 default32M rc=0 secs=35.694427672 bytes=85100918
+onelf stipple L19 1M rc=0 secs=62.828199006 bytes=91847030
+onelf stipple L22 default32M rc=0 secs=56.196083584 bytes=84801910
+onelf stipple store rc=0 secs=2.860566949 bytes=309639542
+mkdwarfs zstd22 -S26 -B2 rc=0 secs=47.704631751 bytes=84034685
+mkdwarfs zstd19 -S26 -B2 rc=0 secs=24.147032556 bytes=85427989
+tar|zstd -19 bytes=85577309
+== dbeaver raw_bytes=101513032
+onelf blocks L19 64K rc=0 secs=1.860707042 bytes=91579781
+onelf blocks L19 1M rc=0 secs=1.890579513 bytes=90665731
+onelf stipple L19 default32M rc=0 secs=14.673737944 bytes=89180663
+onelf stipple L19 1M rc=0 secs=5.799541536 bytes=90327543
+onelf stipple L22 default32M rc=0 secs=12.112400552 bytes=89156087
+onelf stipple store rc=0 secs=.395907135 bytes=102529527
+mkdwarfs zstd22 -S26 -B2 rc=0 secs=10.460736746 bytes=87884176
+mkdwarfs zstd19 -S26 -B2 rc=0 secs=9.858369354 bytes=88057682
+tar|zstd -19 bytes=88288092

@@ -1,0 +1,25 @@
+small9 blocks rep=1 rc=0 secs=.011879763 bytes=2558780
+small9 stipple rep=1 rc=0 secs=.109718320 bytes=2558780
+small9 stored rep=1 rc=0 secs=.139076280 bytes=2558780
+small9 blocks rep=2 rc=0 secs=.010422313 bytes=2558780
+small9 stipple rep=2 rc=0 secs=.106795862 bytes=2558780
+small9 stored rep=2 rc=0 secs=.044035002 bytes=2558780
+small9 blocks rep=3 rc=0 secs=.011219213 bytes=2558780
+small9 stipple rep=3 rc=0 secs=.115752776 bytes=2558780
+small9 stored rep=3 rc=0 secs=.045957560 bytes=2558780
+small9 blocks rep=4 rc=0 secs=.011098903 bytes=2558780
+small9 stipple rep=4 rc=0 secs=.131466825 bytes=2558780
+small9 stored rep=4 rc=0 secs=.048346889 bytes=2558780
+small9 blocks rep=5 rc=0 secs=.011845732 bytes=2558780
+small9 stipple rep=5 rc=0 secs=.111312638 bytes=2558780
+small9 stored rep=5 rc=0 secs=.045956031 bytes=2558780
+libxul blocks rep=1 rc=0 secs=.548892357 bytes=187446616
+libxul stipple rep=1 rc=0 secs=.874480637 bytes=187446616
+libxul stored rep=1 rc=0 secs=.739963383 bytes=187446616
+libxul blocks rep=2 rc=0 secs=.528351370 bytes=187446616
+libxul stipple rep=2 rc=0 secs=.744922470 bytes=187446616
+libxul stored rep=2 rc=0 secs=.859223477 bytes=187446616
+libxul blocks rep=3 rc=0 secs=.510369851 bytes=187446616
+libxul stipple rep=3 rc=0 secs=.749447538 bytes=187446616
+libxul stored rep=3 rc=0 secs=.748034708 bytes=187446616
+ 02:19:45 up 37 min,  0 users,  load average: 5.38, 6.74, 8.12

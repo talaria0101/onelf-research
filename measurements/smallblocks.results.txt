@@ -1,0 +1,41 @@
+firefox pack stipple bs=64K rc=0 secs=44.998670203 bytes=102234486
+small9 stipple bs=64K rep=1 rc=0 secs=.015712710
+small9 stipple bs=64K rep=2 rc=0 secs=.014625231
+small9 stipple bs=64K rep=3 rc=0 secs=.014374380
+small9 stipple bs=64K rep=4 rc=0 secs=.014724881
+small9 stipple bs=64K rep=5 rc=0 secs=.014275611
+full stipple bs=64K rc=0 secs=.832147184
+firefox pack stipple bs=128K rc=0 secs=38.327589857 bytes=98756982
+small9 stipple bs=128K rep=1 rc=0 secs=.015387651
+small9 stipple bs=128K rep=2 rc=0 secs=.014796450
+small9 stipple bs=128K rep=3 rc=0 secs=.013996631
+small9 stipple bs=128K rep=4 rc=0 secs=.014257911
+small9 stipple bs=128K rep=5 rc=0 secs=.014983481
+full stipple bs=128K rc=0 secs=1.026565749
+firefox pack stipple bs=256K rc=0 secs=28.926646329 bytes=96070006
+small9 stipple bs=256K rep=1 rc=0 secs=.014571701
+small9 stipple bs=256K rep=2 rc=0 secs=.014021431
+small9 stipple bs=256K rep=3 rc=0 secs=.014082611
+small9 stipple bs=256K rep=4 rc=0 secs=.014266251
+small9 stipple bs=256K rep=5 rc=0 secs=.014018331
+full stipple bs=256K rc=0 secs=.912941923
+firefox pack stipple bs=512K rc=0 secs=33.694194460 bytes=93989238
+small9 stipple bs=512K rep=1 rc=0 secs=.017965898
+small9 stipple bs=512K rep=2 rc=0 secs=.017706409
+small9 stipple bs=512K rep=3 rc=0 secs=.017563608
+small9 stipple bs=512K rep=4 rc=0 secs=.017251409
+small9 stipple bs=512K rep=5 rc=0 secs=.017952269
+full stipple bs=512K rc=0 secs=1.282720824
+firefox pack stipple bs=1M rc=0 secs=47.168759126 bytes=91847030
+small9 stipple bs=1M rep=1 rc=0 secs=.031286420
+small9 stipple bs=1M rep=2 rc=0 secs=.027651243
+small9 stipple bs=1M rep=3 rc=0 secs=.031987820
+small9 stipple bs=1M rep=4 rc=0 secs=.027871892
+small9 stipple bs=1M rep=5 rc=0 secs=.029097291
+full stipple bs=1M rc=0 secs=1.286428351
+chromium pack stipple bs=64K rc=0 secs=94.488689404 bytes=154243386
+chromium pack stipple bs=128K rc=0 secs=90.305960937 bytes=149897530
+chromium pack stipple bs=256K rc=0 secs=40.022275897 bytes=147034426
+chromium pack stipple bs=512K rc=0 secs=40.714587351 bytes=144589114
+chromium pack stipple bs=1M rc=0 secs=45.612854847 bytes=141971770
+ 02:39:00 up 56 min,  0 users,  load average: 21.10, 19.47, 13.05

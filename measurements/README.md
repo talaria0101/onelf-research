@@ -187,3 +187,54 @@ Reading:
   hide in a FUSE mount, and that mount was not available here. The numbers say
   the decode path itself is not faster than blocks, and they do not say the
   launch path is slower.
+
+## Small image blocks (`smallblocks.sh`, run after the first version of this page)
+
+The headline numbers above use the default 32 MiB image block. Sizes and warm
+decode of the 9 small files at smaller `--block-size` (stipple L19; firefox for
+decode, firefox and chromium for size; host load average was about 21 during
+this run, so the millisecond figures are noisy):
+
+| image block | firefox bytes | vs 32 MiB | chromium bytes | vs 32 MiB | 9 small files, median s |
+|---|---:|---:|---:|---:|---:|
+| 64 KiB | 102,234,486 | +20.1% | 154,243,386 | +18.0% | 0.015 |
+| 128 KiB | 98,756,982 | +16.0% | 149,897,530 | +14.7% | 0.015 |
+| 256 KiB | 96,070,006 | +12.9% | 147,034,426 | +12.5% | 0.014 |
+| 512 KiB | 93,989,238 | +10.4% | 144,589,114 | +10.6% | 0.018 |
+| 1 MiB | 91,847,030 | +7.9% | 141,971,770 | +8.6% | 0.029 |
+| 32 MiB (default) | 85,100,918 | 0 | 130,703,674 | 0 | 0.111 |
+| blocks payload, 64 KiB | 106,762,571 | +25.5% | 164,866,025 | +26.1% | 0.011 |
+
+- Small image blocks remove the first-touch decode cost: 64 KiB to 256 KiB blocks
+  read the 9 files in about 15 ms, close to the blocks payload (11 ms), against
+  111 ms at 32 MiB.
+- They give back part of the size win. At 64 KiB the firefox package is still 4.2%
+  smaller than the blocks package and chromium 6.4% smaller, but 18% to 20% larger than
+  default stipple, so it is no longer near DwarFS. 256 KiB to 1 MiB is the middle
+  ground on these two trees. I did not try 64 MiB, and I did not measure FUSE start-up
+  at any block size, so which size is best for launching an app is still open.
+
+## Can a stipple package reuse bytes from the previous release? (`reuse.sh`)
+
+Premise test for the updater, not a run of it. `python3.14` copied twice, one
+line appended to `os.py` in the second copy, both packed with the same options.
+`zstd -19 --long=27 --patch-from=v1 v2` gives the bytes of v2 that are not found
+in v1 at any offset:
+
+| payload | v2 bytes | not found in v1 | share |
+|---|---:|---:|---:|
+| blocks | 26,599,169 | 64,653 | 0.2% |
+| blocks, `--dict` | 23,093,868 | 17,865,733 | 77% |
+| stipple 32 MiB | 16,725,238 | 10,964,662 | 66% |
+| stipple 1 MiB | 18,654,454 | 13,000,644 | 70% |
+| stipple 64 KiB | 21,091,574 | 17,174,691 | 81% |
+| stipple, `--no-compress` | 71,857,398 | 64,471 | 0.1% |
+
+- One changed file leaves a compressed stipple package mostly new bytes at every
+  block size tried, including 32 MiB where the packer trains no dictionary, so
+  the source comment's reason (a dictionary retrained per build) is not the whole
+  story: each compressed block holds many files, so a change rewrites the blocks
+  that hold it and, apparently, shifts what follows. That second part is inference.
+- A stored stipple image and the default blocks payload reuse almost everything.
+  This agrees with the updater's rule (`delta.rs:378-390` refuses any image with a
+  compressed block). The updater itself did not run.

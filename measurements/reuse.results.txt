@@ -1,0 +1,6 @@
+blocks rc=0,0,0 v1=26599459 v2=26599169 patch_from_v1=64653
+blocks-dict rc=0,0,0 v1=23087302 v2=23093868 patch_from_v1=17865733
+stipple32M rc=0,0,0 v1=16725649 v2=16725238 patch_from_v1=10964662
+stipple64K rc=0,0,0 v1=21091985 v2=21091574 patch_from_v1=17174691
+stipple1M rc=0,0,0 v1=18654865 v2=18654454 patch_from_v1=13000644
+stipple-stored rc=0,0,0 v1=71857809 v2=71857398 patch_from_v1=64471
